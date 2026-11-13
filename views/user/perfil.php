@@ -90,7 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Decodificación de restricciones enviadas vía JSON desde el frontend
     $restriccionesJson = $_POST['restricciones_json'] ?? '[]';
-    $restriccionesArray = json_decode($restriccionesJson, true) ?: [];
+    $restriccionesArray = json_decode($restriccionesJson, true);
+    // Solo una lista de objetos, y con un máximo razonable de elementos
+    $restriccionesArray = is_array($restriccionesArray) ? array_slice(array_filter($restriccionesArray, 'is_array'), 0, 100) : [];
     $currentRestrictions = $restriccionesArray; 
 
     // VALIDACIONES DE INTEGRIDAD BIOLÓGICA
@@ -145,7 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $caloriasNetasObjetivo = $macros['calorias_netas'];
             
         } catch (\Exception $e) {
-            $errors[] = "Error al calcular datos nutricionales: " . $e->getMessage();
+            error_log("Error al calcular datos nutricionales: " . $e->getMessage());
+            $errors[] = "No se pudieron calcular tus objetivos con esos datos.";
             $tdeeCalorias = 0; 
         }
     }
@@ -189,11 +192,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sqlInsert = "INSERT INTO ingrediente_prohibido (id_usuario, nombre_ingrediente, nota) VALUES (?, ?, ?)";
                 $stmtInsert = $pdo->prepare($sqlInsert);
                 
+                $vistos = []; // la tabla no admite el mismo ingrediente dos veces
                 foreach ($restriccionesArray as $restriccion) {
-                    $ingrediente = limpiarInput($restriccion['ingrediente'] ?? '');
-                    $tipo = limpiarInput($restriccion['tipo'] ?? 'no_especificado');
+                    $ingrediente = mb_substr(limpiarInput((string) ($restriccion['ingrediente'] ?? '')), 0, 200);
+                    $tipo = limpiarInput((string) ($restriccion['tipo'] ?? 'no_especificado'));
                     
-                    if (!empty($ingrediente)) {
+                    $claveIngrediente = normalizarString($ingrediente);
+                    if (!empty($ingrediente) && !isset($vistos[$claveIngrediente])) {
+                        $vistos[$claveIngrediente] = true;
                         $nota = $tiposRestriccion[$tipo] ?? 'Restricción Personalizada';
                         $stmtInsert->execute([$userId, $ingrediente, $nota]);
                     }
@@ -217,13 +223,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } catch (\PDOException $e) {
             $pdo->rollBack(); 
-            $errors[] = "Error al guardar el perfil: " . $e->getMessage();
+            error_log("Error al guardar el perfil: " . $e->getMessage());
+            $errors[] = "No se pudo guardar el perfil. Inténtalo de nuevo.";
             $messageType = 'error';
         }
     }
 
     if (!empty($errors)) {
-        $message = "<ul><li>" . implode("</li><li>", $errors) . "</li></ul>";
+        $message = "<ul><li>" . implode("</li><li>", array_map('e', $errors)) . "</li></ul>";
         $messageType = 'error';
         // Mantener datos en memoria para no borrar el formulario en caso de error
         $profileData = array_merge($profileData, [
@@ -272,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' || !empty($errors)) {
     } catch (\PDOException $e) {
         error_log("Error al cargar el perfil o restricciones: " . $e->getMessage());
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-             $message = "Error al cargar datos: " . $e->getMessage();
+             $message = "No se pudieron cargar tus datos. Recarga la página.";
              $messageType = 'error';
         }
     }
@@ -363,8 +370,9 @@ include_once __DIR__ . '/../templates/header.php';
 
     <!-- FORMULARIO DE PERFIL -->
     <form method="POST" id="profileForm" action="perfil.php" class="space-y-8">
+        <?= campoCsrf() ?>
         <!-- Campo Oculto: Almacena las restricciones como JSON para procesarlas en el Backend -->
-        <input type="hidden" name="restricciones_json" id="restricciones_json" value='<?php echo json_encode($currentRestrictions); ?>'>
+        <input type="hidden" name="restricciones_json" id="restricciones_json" value='<?php echo json_html($currentRestrictions); ?>'>
 
         <!-- SECCIÓN 1: Datos Fisiológicos -->
         <div class="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-sm border-2 border-gray-50">
@@ -475,8 +483,8 @@ include_once __DIR__ . '/../templates/header.php';
 <!-- DATA BRIDGE: Pasa los datos de PHP a JavaScript -->
 <script>
     window.profileData = {
-        tipoMap: <?php echo json_encode($tiposRestriccion); ?>,
-        currentRestrictions: <?php echo json_encode($currentRestrictions); ?>
+        tipoMap: <?php echo json_html($tiposRestriccion); ?>,
+        currentRestrictions: <?php echo json_html($currentRestrictions); ?>
     };
 </script>
 

@@ -1,8 +1,8 @@
 <?php
 /**
  * CONTROLADOR: ELIMINACIÓN DE USUARIOS - KaloAI
- * Gestiona el borrado integral de un usuario y registra la acción en los
- * logs de auditoría antes de finalizar la transacción.
+ * Borra a un usuario con todos sus datos y deja constancia en el log de actividad.
+ * Solo acepta POST con token CSRF (lo comprueba utilidades.php).
  */
 
 session_start();
@@ -17,86 +17,80 @@ if (!isset($_SESSION['user_role_id']) || $_SESSION['user_role_id'] != 1) {
     exit;
 }
 
-/* ==========================================================================
-   PROCESO DE ELIMINACIÓN Y AUDITORÍA
-   ========================================================================== */
-if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-    $id_a_borrar = $_GET['id'];
-    $pdo = connectDB();
+$idABorrar = filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT);
 
-    try {
-        // 1. PREPARACIÓN DE AUDITORÍA: Obtenemos datos del usuario antes de borrarlo
-        $stmtInfo = $pdo->prepare("
-            SELECT p.nombre, u.correo 
-            FROM usuario u 
-            LEFT JOIN perfil p ON u.id_usuario = p.id_usuario 
-            WHERE u.id_usuario = ?
-        ");
-        $stmtInfo->execute([$id_a_borrar]);
-        $usuarioAfectado = $stmtInfo->fetch(PDO::FETCH_ASSOC);
-        
-        // Creamos un mensaje descriptivo para el log[cite: 1]
-        if ($usuarioAfectado) {
-            $nombre = !empty($usuarioAfectado['nombre']) ? $usuarioAfectado['nombre'] : "Sin nombre";
-            $detalleLog = "<b>ELIMINACIÓN</b>: Se eliminó permanentemente al usuario <b>$nombre</b> ({$usuarioAfectado['correo']})";
-        } else {
-            $detalleLog = "<b>ELIMINACIÓN</b>: Se eliminó al usuario con ID #$id_a_borrar (No se encontró perfil previo).";
-        }
-
-        // 2. INICIO DE TRANSACCIÓN: Aseguramos integridad total
-        $pdo->beginTransaction();
-
-        /**
-         * Mapeo de dependencias:
-         * Definimos tablas que deben limpiarse para evitar errores de clave foránea.
-         */
-        $mapeo_tablas = [
-            'perfil'                  => 'id_usuario',
-            'receta'                  => 'id_usuario',
-            'inventario'              => 'id_usuario',
-            'solicitudes_vinculacion' => ['id_paciente', 'id_nutricionista']
-        ];
-
-        // 3. LIMPIEZA DE TABLAS DEPENDIENTES[cite: 2]
-        foreach ($mapeo_tablas as $tabla => $columnas) {
-            $res = $pdo->query("SHOW TABLES LIKE '$tabla'");
-            if ($res->rowCount() > 0) {
-                $cols_target = is_array($columnas) ? $columnas : [$columnas];
-                foreach ($cols_target as $col) {
-                    $checkCol = $pdo->query("SHOW COLUMNS FROM `$tabla` LIKE '$col'");
-                    if ($checkCol->rowCount() > 0) {
-                        $stmt = $pdo->prepare("DELETE FROM `$tabla` WHERE `$col` = ?");
-                        $stmt->execute([$id_a_borrar]);
-                    }
-                }
-            }
-        }
-
-        // 4. ELIMINACIÓN DEL REGISTRO MAESTRO[cite: 2]
-        $stmtUser = $pdo->prepare("DELETE FROM usuario WHERE id_usuario = ?");
-        $stmtUser->execute([$id_a_borrar]);
-
-        // 5. REGISTRO EN LOGS DE ACTIVIDAD: Para que aparezca en el Dashboard Admin[cite: 1, 3]
-        $stmtLog = $pdo->prepare("INSERT INTO logs_actividad (detalle) VALUES (?)");
-        $stmtLog->execute([$detalleLog]);
-
-        // Confirmamos todos los cambios en la BD
-        $pdo->commit();
-
-        /* ==========================================================================
-           REDIRECCIÓN CON ÉXITO
-           ========================================================================== */
-        header("Location: dashboard_admin.php?msg=borrado_exitoso");
-        exit;
-
-    } catch (Exception $e) {
-        // Si algo falla, revertimos para no dejar datos huérfanos o inconsistentes[cite: 2]
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        die("Error Crítico en el Proceso de Borrado: " . $e->getMessage());
-    }
-} else {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$idABorrar) {
     header("Location: dashboard_admin.php");
+    exit;
+}
+
+// Un administrador no puede borrar su propia cuenta desde el panel
+if ($idABorrar === (int) $_SESSION['user_id']) {
+    header("Location: dashboard_admin.php?msg=no_autoborrado");
+    exit;
+}
+
+$pdo = connectDB();
+
+try {
+    // 1. Datos para el log, antes de que desaparezcan
+    $stmtInfo = $pdo->prepare("
+        SELECT p.nombre, u.correo
+        FROM usuario u
+        LEFT JOIN perfil p ON u.id_usuario = p.id_usuario
+        WHERE u.id_usuario = ?
+    ");
+    $stmtInfo->execute([$idABorrar]);
+    $usuarioAfectado = $stmtInfo->fetch(PDO::FETCH_ASSOC);
+
+    if (!$usuarioAfectado) {
+        header("Location: dashboard_admin.php");
+        exit;
+    }
+
+    // El log se pinta como HTML: nombre y correo van escapados
+    $nombre = e($usuarioAfectado['nombre'] ?: 'Sin nombre');
+    $correo = e($usuarioAfectado['correo']);
+    $detalleLog = "<b>ELIMINACIÓN</b>: Se eliminó permanentemente al usuario <b>$nombre</b> ($correo)";
+
+    $pdo->beginTransaction();
+
+    // 2. Sus recetas: la clave foránea las dejaría sin dueño (SET NULL), así que
+    //    se apuntan antes y se borran después de borrar al usuario
+    $stmtRecetas = $pdo->prepare("SELECT id_receta FROM receta WHERE id_usuario_creador = ?");
+    $stmtRecetas->execute([$idABorrar]);
+    $idsRecetas = $stmtRecetas->fetchAll(PDO::FETCH_COLUMN);
+
+    // 3. El usuario. Las claves foráneas borran en cascada su perfil, inventario,
+    //    alergias, progreso, plan semanal (y sus comidas) y solicitudes de vínculo,
+    //    y desvinculan a sus pacientes si era nutricionista.
+    //    Las solicitudes se borran a mano por si la base de datos aún no tiene la
+    //    migración 001 (sin ella, la del nutricionista no se borra en cascada).
+    $pdo->prepare("DELETE FROM solicitudes_vinculacion WHERE id_nutricionista = ? OR id_paciente = ?")
+        ->execute([$idABorrar, $idABorrar]);
+    $pdo->prepare("DELETE FROM usuario WHERE id_usuario = ?")->execute([$idABorrar]);
+
+    if ($idsRecetas) {
+        $marcas = implode(',', array_fill(0, count($idsRecetas), '?'));
+        // Por si alguna receta suya seguía en el plan de otra persona
+        $pdo->prepare("DELETE FROM comida_planificada WHERE id_receta IN ($marcas)")->execute($idsRecetas);
+        // detalle_receta se borra en cascada
+        $pdo->prepare("DELETE FROM receta WHERE id_receta IN ($marcas)")->execute($idsRecetas);
+    }
+
+    // 4. Registro en el log de actividad del panel
+    $pdo->prepare("INSERT INTO logs_actividad (detalle) VALUES (?)")->execute([$detalleLog]);
+
+    $pdo->commit();
+
+    header("Location: dashboard_admin.php?msg=borrado_exitoso");
+    exit;
+
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log("Error al borrar el usuario $idABorrar: " . $e->getMessage());
+    header("Location: dashboard_admin.php?msg=borrado_fallido");
     exit;
 }

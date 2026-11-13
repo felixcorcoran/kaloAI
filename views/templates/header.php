@@ -8,6 +8,7 @@
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/../../core/seguridad.php';
 
 // 2. Variables de configuración de rutas
 $appName = "KaloAI";
@@ -51,6 +52,8 @@ $inicial = function_exists('mb_substr')
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Token CSRF para las peticiones que hace main.js (fetch y formularios creados al vuelo) -->
+    <meta name="csrf-token" content="<?= e(csrfToken()) ?>">
     <title><?php echo htmlspecialchars($pageTitle ?? $appName); ?></title>
     <?php include __DIR__ . '/tema.php'; ?>
     
@@ -109,10 +112,13 @@ $inicial = function_exists('mb_substr')
                     </span>
                 </div>
                 <!-- Acción para revertir la suplantación y volver al panel de nutricionista -->
-                <a href="<?= BASE_URL ?>views/nutri/salir_paciente.php"
-                   class="shrink-0 rounded-full bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-600 shadow-sm transition hover:bg-orange-50">
-                    Finalizar Gestión
-                </a>
+                <form method="POST" action="<?= BASE_URL ?>views/nutri/salir_paciente.php" class="m-0 shrink-0">
+                    <?= campoCsrf() ?>
+                    <button type="submit"
+                       class="rounded-full bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-600 shadow-sm transition hover:bg-orange-50">
+                        Finalizar Gestión
+                    </button>
+                </form>
             </div>
         </div>
     <?php endif; ?>

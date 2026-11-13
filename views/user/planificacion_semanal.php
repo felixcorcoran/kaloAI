@@ -24,8 +24,8 @@ $pdo = connectDB();
  * Permite al usuario retirar recetas específicas de su calendario.
  * Se incluye un JOIN de seguridad para asegurar que el registro pertenece al usuario actual.
  */
-if (isset($_GET['eliminar_id'])) {
-    $idComida = intval($_GET['eliminar_id']);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_id'])) {
+    $idComida = intval($_POST['eliminar_id']);
     try {
         $sqlDelete = "DELETE cp FROM comida_planificada cp 
                       JOIN plan_semanal ps ON cp.id_plan = ps.id_plan 
@@ -166,7 +166,7 @@ include_once __DIR__ . '/../templates/header.php';
                 
                 <!-- CABECERA DE DÍA: Barra de progreso de calorías -->
                 <div class="p-5 border-b border-gray-50 <?= $excesoCritico ? 'bg-red-50/50' : 'bg-gray-50/30' ?> cursor-pointer hover:bg-white transition-colors" 
-                     onclick='abrirResumenDia("<?= $dia ?>", <?= json_encode($t) ?>)'>
+                     onclick='abrirResumenDia(<?= json_html($dia) ?>, <?= json_html($t) ?>)'>
                     <div class="flex justify-between items-center mb-3">
                         <h3 class="font-black text-gray-900 italic text-lg capitalize"><?= $dia ?></h3>
                         <div class="h-6 w-6 rounded-full bg-white flex items-center justify-center shadow-sm">
@@ -189,7 +189,7 @@ include_once __DIR__ . '/../templates/header.php';
                     <?php foreach ($todasComidas as $m): ?>
                         <?php if (isset($plan[$dia][$m])): $c = $plan[$dia][$m]; ?>
                             <!-- TARJETA DE RECETA: Si la comida ya está planificada -->
-                            <div onclick='abrirReceta(<?= json_encode($c) ?>)' 
+                            <div onclick='abrirReceta(<?= json_html($c) ?>)' 
                                  class="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:border-teal-100 transition-all cursor-pointer group relative overflow-hidden">
                                 <div class="absolute left-0 top-0 w-1 h-full bg-teal-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                 <div class="flex justify-between items-start mb-1">
@@ -201,7 +201,7 @@ include_once __DIR__ . '/../templates/header.php';
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>
                                     </button>
                                 </div>
-                                <p class="text-sm font-black text-gray-800 leading-tight mb-2 group-hover:text-teal-700 transition-colors"><?= $c['titulo'] ?></p>
+                                <p class="text-sm font-black text-gray-800 leading-tight mb-2 group-hover:text-teal-700 transition-colors"><?= e($c['titulo']) ?></p>
                                 <div class="flex items-center text-[10px] font-bold text-gray-400 italic">
                                     <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                                     <?= round($c['calorias_por_racion']) ?> kcal
@@ -215,7 +215,7 @@ include_once __DIR__ . '/../templates/header.php';
                                     <span class="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">Límite kcal</span>
                                 </div>
                             <?php else: ?>
-                                <a href="generar_receta.php?dia=<?= $dia ?>&momento=<?= $m ?>" 
+                                <a href="generar_receta.php?dia=<?= urlencode($dia) ?>&momento=<?= urlencode($m) ?>" 
                                    class="p-5 border-2 border-dashed border-gray-100 rounded-2xl flex flex-col items-center justify-center hover:bg-teal-50/50 hover:border-teal-200 transition-all group border-spacing-4">
                                     <span class="text-[9px] font-black text-gray-400 group-hover:text-teal-600 uppercase tracking-widest mb-1"><?= $m ?></span>
                                     <div class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
@@ -335,9 +335,9 @@ include_once __DIR__ . '/../templates/header.php';
 
         <!-- El 'href' de este botón se cambia dinámicamente vía JS según la ID de la comida -->
         <div class="flex flex-col gap-3">
-            <a id="btnConfirmarEliminar" href="#" class="w-full py-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all shadow-lg shadow-red-200">
+            <button type="button" id="btnConfirmarEliminar" class="w-full py-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all shadow-lg shadow-red-200">
                 Confirmar y Quitar
-            </a>
+            </button>
             <button onclick="cerrarModalPlan('modalEliminar')" class="w-full py-4 bg-gray-50 hover:bg-gray-100 text-gray-400 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all">
                 Cancelar
             </button>

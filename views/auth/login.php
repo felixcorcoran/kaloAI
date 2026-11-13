@@ -24,8 +24,8 @@ $error = '';
    PROCESAMIENTO DEL FORMULARIO (POST)
    ========================================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email']);
-    $password = $_POST['password'];
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
 
     // Validación básica de campos vacíos
     if (!empty($email) && !empty($password)) {
@@ -107,12 +107,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <!-- GESTIÓN DE ERRORES: Feedback visual ante fallos de autenticación -->
         <?php if ($error): ?>
             <div class="bg-red-50 text-red-600 p-4 rounded-2xl mb-6 text-sm font-bold border border-red-100 animate-pulse text-center">
-                <?= $error ?>
+                <?= e($error) ?>
             </div>
         <?php endif; ?>
 
         <!-- FORMULARIO DE ACCESO: Captura de credenciales -->
         <form method="POST" action="" class="space-y-6">
+            <?= campoCsrf() ?>
             <div>
                 <label class="block text-xs font-black uppercase text-gray-400 mb-2 ml-1">Correo Electrónico</label>
                 <input type="email" name="email" required 

@@ -41,7 +41,10 @@ include_once __DIR__ . '/../templates/header.php';
     </div>
 
     <!-- FORMULARIO DE RECEPTA: Envío de datos al núcleo de procesamiento -->
+    <?php include __DIR__ . '/../templates/errores_form.php'; ?>
+
     <form action="../../core/guardar_receta.php" method="POST" class="space-y-8">
+        <?= campoCsrf() ?>
         
         <!-- BLOQUE 1: Datos básicos y clasificación de la comida -->
         <div class="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100">

@@ -91,7 +91,7 @@ try {
     }
 
     // Transformación a formato consumible por Chart.js
-    $jsProgresoData = json_encode($progresoData);
+    $jsProgresoData = json_html($progresoData); // escapado para incrustarlo en <script>
 
 } catch (\PDOException $e) {
     error_log("Error al cargar datos de progreso en dashboard: " . $e->getMessage());
@@ -99,41 +99,7 @@ try {
 
 /**
  * ==========================================================
- * LÓGICA DE ALIMENTACIÓN DIARIA (V1)
- * Determina el día de la semana y normaliza los momentos de comida.
- * ==========================================================
- */
-$diasEsp = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-$diaHoyNombre = $diasEsp[date('w')]; // Obtiene el nombre del día según el índice de la función date()
-
-$momentosDefinidos = ['Desayuno', 'Media Mañana', 'Almuerzo', 'Merienda', 'Cena'];
-$comidasHoy = [];
-
-// Consulta SQL con normalización LOWER para evitar errores de case-sensitivity en los días
-$sqlComidas = "SELECT cp.*, r.titulo, r.calorias_por_racion, r.id_receta 
-                FROM comida_planificada cp
-                JOIN receta r ON cp.id_receta = r.id_receta
-                JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                WHERE ps.id_usuario = ? 
-                AND LOWER(cp.dia_semana) = LOWER(?)"; 
-
-$stmtComidas = $pdo->prepare($sqlComidas);
-$stmtComidas->execute([$userId, $diaHoyNombre]); 
-$resultadosComidas = $stmtComidas->fetchAll(PDO::FETCH_ASSOC);
-
-foreach ($resultadosComidas as $row) {
-    /**
-     * NORMALIZACIÓN DE CLAVES:
-     * Asegura que "almuerzo" se convierta en "Almuerzo" para que la UI 
-     * encuentre siempre la receta en el array $comidasHoy.
-     */
-    $momentoKey = ucfirst(strtolower($row['momento_comida']));
-    $comidasHoy[$momentoKey] = $row;
-}
-
-/**
- * ==========================================================
- * LÓGICA DE ALIMENTACIÓN DIARIA (V2 - ADAPTADA A 5 MOMENTOS)
+ * LÓGICA DE ALIMENTACIÓN DIARIA (5 MOMENTOS)
  * Versión optimizada con traducción de índices de base de datos a nombres.
  * ==========================================================
  */
@@ -186,8 +152,13 @@ $stmtSol = $pdo->prepare("
     WHERE s.id_paciente = ? AND s.estado = 'pendiente'
 ");
 $stmtSol->execute([$_SESSION['user_id']]);
-$solicitudes = $stmtSol->fetchAll();
+// En modo gestión el nutricionista no debe ver (ni responder) las invitaciones del paciente
+$solicitudes = empty($_SESSION['is_impersonating']) ? $stmtSol->fetchAll() : [];
 
+// Carga del componente de cabecera (antes de cualquier HTML: el <!DOCTYPE> va primero)
+include_once __DIR__ . '/templates/header.php';
+?>
+<?php
 /**
  * UI: RENDERIZADO DE ALERTAS DE VINCULACIÓN
  * Muestra un modal disruptivo (pero estético) para cada solicitud pendiente.
@@ -217,16 +188,24 @@ foreach ($solicitudes as $sol):
             <!-- Acciones de Decisión -->
             <div class="flex flex-col gap-3">
                 <!-- Botón de Aceptación: Ejecuta el script de vinculación positiva -->
-                <a href="user/aceptar_nutri.php?id=<?= $sol['id_solicitud'] ?>&accion=aceptar" 
-                   class="w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-teal-600 transition-all shadow-xl active:scale-95">
-                    Permitir Acceso
-                </a>
+                <form method="POST" action="user/aceptar_nutri.php" class="m-0">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="id" value="<?= (int) $sol['id_solicitud'] ?>">
+                    <button type="submit" name="accion" value="aceptar"
+                       class="w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-teal-600 transition-all shadow-xl active:scale-95">
+                        Permitir Acceso
+                    </button>
+                </form>
                 
                 <!-- Botón de Rechazo: Ejecuta la limpieza de la solicitud -->
-                <a href="aceptar_nutri.php?id=<?= $sol['id_solicitud'] ?>&accion=rechazar" 
-                   class="w-full bg-white text-gray-400 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:text-red-500 transition-all">
-                    Ahora no, gracias
-                </a>
+                <form method="POST" action="user/aceptar_nutri.php" class="m-0">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="id" value="<?= (int) $sol['id_solicitud'] ?>">
+                    <button type="submit" name="accion" value="rechazar"
+                       class="w-full bg-white text-gray-400 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:text-red-500 transition-all">
+                        Ahora no, gracias
+                    </button>
+                </form>
             </div>
 
             <p class="mt-6 text-[10px] text-gray-300 font-bold uppercase tracking-widest">
@@ -234,11 +213,8 @@ foreach ($solicitudes as $sol):
             </p>
         </div>
     </div>
-<?php endforeach;
+<?php endforeach; ?>
 
-// Carga del componente de cabecera 
-include_once __DIR__ . '/templates/header.php';
-?>
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
     <div class="p-8 bg-white rounded-3xl shadow-sm border border-gray-100">

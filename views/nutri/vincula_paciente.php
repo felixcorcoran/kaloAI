@@ -7,6 +7,7 @@
 
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
+require_once __DIR__ . '/../../core/utilidades.php'; // incluye la comprobación del token CSRF
 
 /* ==========================================================================
    SEGURIDAD: CONTROL DE ACCESO
@@ -21,7 +22,7 @@ if (!isset($_SESSION['user_role_id']) || $_SESSION['user_role_id'] > 2) {
    PROCESAMIENTO DE LA BÚSQUEDA (POST)
    ========================================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_busqueda'])) {
-    $email = trim($_POST['email_busqueda']);
+    $email = trim((string) $_POST['email_busqueda']);
     $nutriId = $_SESSION['user_id'];
     $pdo = connectDB();
 

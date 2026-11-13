@@ -2,63 +2,66 @@
 require_once __DIR__ . '/configuracion.php';
 
 /**
- * Función para realizar consultas a la API de Gemini.
- * Implementa un sistema de rotación de claves para asegurar disponibilidad.
+ * Envía un prompt a Google Gemini y devuelve el texto de la respuesta, o null
+ * si no se ha podido obtener.
+ *
+ * - La clave va en la cabecera x-goog-api-key, no en la URL: así no aparece en
+ *   los logs de proxies ni del servidor.
+ * - El certificado TLS se verifica siempre (sin esto, cualquiera en medio de la
+ *   conexión podría leer la clave y las respuestas).
+ * - Si hay varias claves configuradas, se prueba la siguiente solo cuando una
+ *   no es válida (revocada o sin permiso). Un límite de uso (HTTP 429) no se
+ *   esquiva con otra clave: se informa a la persona para que lo intente luego.
  */
-function preguntarGemini($prompt) {
-    $keys = GEMINI_API_KEYS;
-    $ultimoError = "No hay API Keys configuradas";
-
-    // Recorro las API Keys disponibles para gestionar posibles límites o fallos
-    foreach ($keys as $index => $key) {
-        $url = GEMINI_API_URL . "?key=" . $key;
-
-        // Configuro la petición manteniendo el formato de JSON estricto y la temperatura
-        $data = [
-            "contents" => [
-                ["parts" => [["text" => $prompt]]]
-            ],
-            "generationConfig" => [
-                "temperature" => 0.7,
-                "response_mime_type" => "application/json"
-            ]
-        ];
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-        
-        // Ajustes de seguridad y tiempos de espera para evitar bloqueos del script
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); 
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10); 
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-        $respuesta = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        // Si la respuesta es correcta, extraigo el contenido textual
-        if ($httpCode === 200) {
-            $jsonResponse = json_decode($respuesta, true);
-            
-            // Obtengo el texto limpio generado por la IA para su posterior procesamiento
-            $textoIA = $jsonResponse['candidates'][0]['content']['parts'][0]['text'] ?? null;
-            
-            if ($textoIA) {
-                return $textoIA; 
-            }
-        } 
-        
-        // En caso de fallo, registro el error y continúo intentando con la siguiente API Key
-        $errorData = json_decode($respuesta, true);
-        $ultimoError = $errorData['error']['message'] ?? "Error HTTP $httpCode";
-        error_log("KaloAI: Falló API Key " . ($index + 1) . ". Error: " . $ultimoError);
+function preguntarGemini(string $prompt): ?string {
+    $claves = defined('GEMINI_API_KEYS') ? array_filter((array) GEMINI_API_KEYS) : [];
+    if (!$claves) {
+        error_log("KaloAI: no hay ninguna clave de Gemini configurada (GEMINI_API_KEY)");
+        return null;
     }
 
-    // Si se agotan todas las llaves sin éxito, retorno un error estructurado
-    return json_encode([
-        'error' => "Todas las API Keys fallaron. Último error: " . $ultimoError
+    $cuerpo = json_encode([
+        "contents" => [["parts" => [["text" => $prompt]]]],
+        "generationConfig" => [
+            "temperature" => 0.7,
+            "response_mime_type" => "application/json",
+        ],
     ]);
+
+    foreach (array_values($claves) as $indice => $clave) {
+        $ch = curl_init(GEMINI_API_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $cuerpo,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'x-goog-api-key: ' . $clave],
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT        => 45,
+        ]);
+        $respuesta = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $errorCurl = curl_error($ch);
+        curl_close($ch);
+
+        if ($httpCode === 200) {
+            $json = json_decode((string) $respuesta, true);
+            $texto = $json['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            if (is_string($texto) && $texto !== '') {
+                return $texto;
+            }
+            error_log("KaloAI: Gemini respondió sin texto (posible bloqueo de seguridad del modelo)");
+            return null;
+        }
+
+        $mensaje = $errorCurl ?: (json_decode((string) $respuesta, true)['error']['message'] ?? "HTTP $httpCode");
+        error_log("KaloAI: falló la clave " . ($indice + 1) . " de Gemini: " . $mensaje);
+
+        // Solo tiene sentido probar otra clave si el problema es de esta clave
+        if (!in_array($httpCode, [400, 401, 403], true) || !str_contains(strtolower($mensaje), 'key')) {
+            return null;
+        }
+    }
+    return null;
 }

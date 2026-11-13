@@ -155,8 +155,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
+    } catch (\PDOException $e) {
+        // Error técnico: al log, no a la pantalla
+        error_log("Error en inventario: " . $e->getMessage());
+        $errors[] = "No se pudo guardar el cambio. Inténtalo de nuevo.";
     } catch (\Exception $e) {
-        $errors[] = "Error: " . $e->getMessage();
+        $errors[] = $e->getMessage();
+    }
+
+    // Antes los errores se perdían y la página no avisaba de nada
+    if (!empty($errors)) {
+        $message = implode(' ', $errors);
         $messageType = 'error';
     }
 
@@ -231,7 +240,7 @@ include_once __DIR__ . '/../templates/header.php';
             <?php echo $messageType === 'success' ? 'bg-green-50 text-green-700 border-l-4 border-green-500' : 'bg-red-50 text-red-700 border-l-4 border-red-500'; ?>" 
             role="alert">
             <i class="mr-3 text-xl <?php echo $messageType === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle'; ?>"></i>
-            <?php echo $message; ?>
+            <?php echo e($message); ?>
         </div>
     <?php endif; ?>
 
@@ -283,13 +292,13 @@ include_once __DIR__ . '/../templates/header.php';
                                 <!-- BOTONES DE ACCIÓN: Envío de datos JSON al modal para edición rápida -->
                                 <td class="px-8 py-5 whitespace-nowrap text-right">
                                     <div class="flex justify-end gap-2">
-                                        <button onclick="abrirModalInventario('edit', <?php echo htmlspecialchars(json_encode($item, JSON_UNESCAPED_UNICODE | JSON_HEX_QUOT), ENT_QUOTES, 'UTF-8'); ?>)" 
+                                        <button onclick="abrirModalInventario('edit', <?php echo e(json_html($item)); ?>)" 
                                             class="p-3 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-500 hover:text-white transition-all active:scale-90 shadow-sm shadow-amber-100/50">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                                 <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zm-3.83 3.83a.999.999 0 00-.083.187l-.022.046-.01.03-.004.008-6.195 6.195a1 1 0 00-.232.453l-.579 2.052a1 1 0 00.147.935.996.996 0 00.439.236l2.052-.579a1 1 0 00.453-.232l6.195-6.195a1 1 0 00.187-.083.998.998 0 00.187-.083l.035-.022.046-.01.03-.004.008-.002.002-.002z"/>
                                             </svg>
                                         </button>
-                                        <button onclick="abrirModalEliminarInventario(<?php echo (int) $item['id_inventario']; ?>, '<?php echo htmlspecialchars(addslashes($item['nombre_ingrediente'])); ?>')" 
+                                        <button onclick="abrirModalEliminarInventario(<?php echo (int) $item['id_inventario']; ?>, <?php echo e(json_html($item['nombre_ingrediente'])); ?>)" 
                                             class="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-500 hover:text-white transition-all active:scale-90 shadow-sm shadow-red-100/50">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                                 <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
@@ -336,6 +345,7 @@ include_once __DIR__ . '/../templates/header.php';
         
         <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border-t-4 border-teal-600">
             <form id="itemForm" method="POST" action="inventario.php" class="p-6 sm:p-8">
+                <?= campoCsrf() ?>
                 <h3 class="text-2xl font-extrabold text-gray-900 mb-6 border-b pb-3" id="modal-title">
                     Añadir Nuevo Ingrediente
                 </h3>

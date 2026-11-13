@@ -9,6 +9,7 @@ session_start();
 
 // Importamos la configuración global y conexión a BD
 require_once __DIR__ . '/../../core/configuracion.php';
+require_once __DIR__ . '/../../core/utilidades.php'; // incluye la comprobación del token CSRF
 
 /* ==========================================================================
    1. SEGURIDAD Y CAPTURA DE DATOS
@@ -19,8 +20,12 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$idSol = $_GET['id'] ?? null;
-$accion = $_GET['accion'] ?? null;
+// Solo por POST (con token CSRF): un enlace GET permitiría a otra web
+// vincular a alguien con un nutricionista sin que se diera cuenta.
+// En modo gestión el nutricionista no puede responder por el paciente.
+$esPost = $_SERVER['REQUEST_METHOD'] === 'POST' && empty($_SESSION['is_impersonating']);
+$idSol = $esPost ? filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT) : null;
+$accion = $esPost ? ($_POST['accion'] ?? null) : null;
 $idPaciente = $_SESSION['user_id'];
 $pdo = connectDB();
 

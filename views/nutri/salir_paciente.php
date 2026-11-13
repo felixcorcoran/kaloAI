@@ -7,13 +7,15 @@
 
 ob_start();
 session_start();
+require_once __DIR__ . '/../../core/configuracion.php';
+require_once __DIR__ . '/../../core/utilidades.php'; // incluye la comprobación del token CSRF
 
 /* ==========================================================================
    RESTAURACIÓN DE IDENTIDAD
    ========================================================================== */
 // Verificamos si realmente estamos en modo suplantación para evitar
 // errores al intentar acceder a índices de $_SESSION que no existen.
-if (isset($_SESSION['is_impersonating'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['is_impersonating'])) {
     
     /* 1. RECUPERAR VALORES ORIGINALES */
     // Devolvemos al usuario su ID y su Rol real (Nutricionista o Admin)

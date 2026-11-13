@@ -57,7 +57,9 @@ include_once __DIR__ . '/../views/templates/header.php';
 
             <!-- FORMULARIO DE CONTACTO: Captura de leads y consultas -->
             <div class="bg-white p-10 md:p-12 rounded-[3rem] shadow-2xl shadow-teal-900/5 border border-gray-100">
+                <!-- PENDIENTE: este formulario todavía no envía el mensaje a ningún sitio -->
                 <form action="#" method="POST" class="space-y-6">
+                    <?= campoCsrf() ?>
                     <div>
                         <label class="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 ml-2">Nombre Completo</label>
                         <input type="text" name="nombre" required

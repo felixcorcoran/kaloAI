@@ -9,8 +9,9 @@ session_start();
 
 // Carga de dependencias centrales
 require_once __DIR__ . '/../../core/configuracion.php';
-require_once __DIR__ . '/../../core/generar_recetas_ia.php'; // Motor de IA (OpenAI/Gemini)
-require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/utilidades.php'; // incluye la comprobación del token CSRF
+require_once __DIR__ . '/../../core/generar_recetas_ia.php'; // Motor de IA (Gemini)
+require_once __DIR__ . '/../../core/recetas.php';
 
 // 1. SEGURIDAD Y CONTROL DE ACCESO
 if (!isset($_SESSION['user_id'])) {
@@ -27,23 +28,17 @@ $errorIA = null;
 // 2. CAPTURA DE CONTEXTO (Proveniente del calendario o navegación directa)
 // Se identifica para qué día y momento (Desayuno, Almuerzo...) se está trabajando
 
+// Solo se aceptan días y momentos conocidos; cualquier otro valor se ignora
 $diaUrl = $_GET['dia'] ?? $_POST['dia_contexto'] ?? null;
-$momentoUrl = $_GET['momento'] ?? $_POST['momento_contexto'] ?? null;
-
-$momentoParaIA = $momentoUrl ?: 'Almuerzo';
-
-// Mapeo para traducir nombres de días a índices de base de datos (0-6)
-$diasMapeo = [
-    'Lunes' => 0, 'Martes' => 1, 'Miércoles' => 2, 
-    'Jueves' => 3, 'Viernes' => 4, 'Sábado' => 5, 'Domingo' => 6
-];
+$diaUrl = diaANumero($diaUrl) !== null ? DIAS_SEMANA[diaANumero($diaUrl)] : null;
+$momentoUrl = momentoValido($_GET['momento'] ?? $_POST['momento_contexto'] ?? null);
 
 /* ==========================================================================
    3. VALIDACIÓN DE LÍMITE CALÓRICO
    Evita que el usuario añada más comida si ya superó su meta diaria (Margen 10%)
    ========================================================================== */
 if ($diaUrl) {
-    $diaNum = $diasMapeo[$diaUrl] ?? 0;
+    $diaNum = diaANumero($diaUrl);
 
     // Sumar calorías ya planificadas para el día seleccionado
     $stmtCheck = $pdo->prepare("SELECT SUM(r.calorias_por_racion) as total 
@@ -77,18 +72,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generar'])) {
     $soloInventario = isset($_POST['modo_generacion']) && $_POST['modo_generacion'] === 'estricto';
     
     // Texto libre del usuario (ej: "Sin lactosa", "Muy picante")
-    $sugerencia = $_POST['sugerencia_ia'] ?? ""; 
-    
+    $sugerencia = mb_substr(trim((string) ($_POST['sugerencia_ia'] ?? '')), 0, 300);
+
     // Determinar el tipo de comida final
-    $momentoFinal = $momentoUrl ?: ($_POST['tipo_comida_manual'] ?? 'Almuerzo');
-    
+    $momentoFinal = $momentoUrl ?: tipoRecetaParaMomento($_POST['tipo_comida_manual'] ?? 'Almuerzo');
+
     // Ejecución de la IA
     $resultado = generarRecetaInteligente($userId, $soloInventario, $diaUrl, $momentoFinal, $sugerencia);
-    
+
     if (isset($resultado['error'])) {
         $errorIA = $resultado['error'];
     } else {
         $receta = $resultado; // Array con titulo, ingredientes, instrucciones y macros
+        // La receta se queda en el servidor hasta que la persona decide guardarla.
+        // Antes viajaba en un campo oculto y se podía modificar antes de guardarla.
+        $_SESSION['receta_ia_pendiente'] = [
+            'receta'  => $receta,
+            'dia'     => $diaUrl,
+            'momento' => $momentoUrl ?: $momentoFinal,
+        ];
     }
 }
 
@@ -97,19 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generar'])) {
    Filtra las recetas guardadas del usuario que coinciden con el tipo buscado
    ========================================================================== */
 $tipoBuscado = 'Almuerzo';
-$momentoParaFiltrar = $momentoUrl ?: ($_POST['tipo_comida_manual'] ?? 'Almuerzo');
-$momentoNormalizado = mb_strtolower($momentoParaFiltrar, 'UTF-8'); // Uso de mb_strtolower para tildes
-
-// Normalización estricta: Todo lo relacionado a entre horas es 'Snack'
-if (in_array($momentoNormalizado, ['media mañana', 'merienda', 'snack', 'tentempié'])) {
-    $tipoBuscado = 'Snack';
-} elseif ($momentoNormalizado === 'desayuno') {
-    $tipoBuscado = 'Desayuno';
-} elseif ($momentoNormalizado === 'cena') {
-    $tipoBuscado = 'Cena';
-} else {
-    $tipoBuscado = 'Almuerzo';
-}
+$momentoParaFiltrar = $momentoUrl ?: tipoRecetaParaMomento($_POST['tipo_comida_manual'] ?? 'Almuerzo');
+// Todo lo que va entre horas se guarda como 'Snack'
+$tipoBuscado = tipoRecetaParaMomento($momentoParaFiltrar);
 
 $stmtRecetas = $pdo->prepare("SELECT * FROM receta WHERE id_usuario_creador = ? AND tipo_comida = ? ORDER BY titulo ASC");
 $stmtRecetas->execute([$userId, $tipoBuscado]);
@@ -120,42 +112,26 @@ $misRecetas = $stmtRecetas->fetchAll();
    Gestiona la transacción para guardar una receta de la biblioteca en el plan
    ========================================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['seleccionar_existente'])) {
-    $idRecetaSel = $_POST['id_receta_seleccionada'];
-    $diaNombre = $_POST['dia_contexto']; 
-    $momentoContexto = $_POST['momento_contexto'];
-    $diaNumero = $diasMapeo[$diaNombre] ?? 0; 
+    $idRecetaSel = filter_var($_POST['id_receta_seleccionada'] ?? null, FILTER_VALIDATE_INT);
+    $diaNumero = diaANumero($diaUrl);
 
     try {
         $pdo->beginTransaction();
-        
-        // Obtener el plan activo del usuario (o crear uno si no existe)
-        $stmtPlan = $pdo->prepare("SELECT id_plan FROM plan_semanal WHERE id_usuario = ? LIMIT 1");
-        $stmtPlan->execute([$userId]);
-        $plan = $stmtPlan->fetch();
-        $idPlan = $plan ? $plan['id_plan'] : null;
-        
-        if (!$idPlan) {
-            $stmtNewPlan = $pdo->prepare("INSERT INTO plan_semanal (id_usuario, nombre_plan) VALUES (?, 'Mi Plan Principal')");
-            $stmtNewPlan->execute([$userId]);
-            $idPlan = $pdo->lastInsertId();
-        }
+        // asignarRecetaAlPlan comprueba que la receta sea de esta persona y que
+        // el día y el momento existan; crea el plan si aún no lo tiene
+        $asignada = $idRecetaSel && $diaNumero !== null && $momentoUrl
+            && asignarRecetaAlPlan($pdo, (int) $userId, $idRecetaSel, $diaNumero, $momentoUrl);
+        $pdo->commit();
 
-        if (!empty($idRecetaSel)) {
-            // Eliminar cualquier comida previa en ese mismo horario para evitar solapamientos
-            $pdo->prepare("DELETE FROM comida_planificada WHERE id_plan = ? AND dia_semana = ? AND momento_comida = ?")
-                ->execute([$idPlan, $diaNumero, $momentoContexto]);
-
-            // Insertar la nueva selección
-            $pdo->prepare("INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, raciones) VALUES (?, ?, ?, ?, 1)")
-                ->execute([$idPlan, $idRecetaSel, $diaNumero, $momentoContexto]);
-            
-            $pdo->commit();
+        if ($asignada) {
             header("Location: planificacion_semanal.php?success=assigned");
             exit;
         }
+        $errorIA = "No se pudo añadir esa receta al plan.";
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $errorIA = "Error al asignar: " . $e->getMessage();
+        error_log("Error al asignar receta al plan: " . $e->getMessage());
+        $errorIA = "No se pudo añadir la receta al plan. Inténtalo de nuevo.";
     }
 }
 
@@ -211,9 +187,10 @@ include_once __DIR__ . '/../templates/header.php';
             </div>
 
             <form id="formGeneradorIA" method="POST" class="space-y-8">
+                <?= campoCsrf() ?>
                 <!-- Inputs ocultos para mantener el contexto del calendario si existe -->
-                <input type="hidden" name="dia_contexto" value="<?= htmlspecialchars($diaUrl) ?>">
-                <input type="hidden" name="momento_contexto" value="<?= htmlspecialchars($momentoUrl) ?>">
+                <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
+                <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
 
                 <!-- SELECTOR DE MOMENTO: Solo aparece si el usuario entró libremente (no desde el calendario) -->
                 <?php if (!$momentoUrl): ?>
@@ -224,7 +201,7 @@ include_once __DIR__ . '/../templates/header.php';
                             $opciones = ['Desayuno' => '🍳', 'Almuerzo' => '🍱', 'Snack' => '🥪', 'Cena' => '🌙'];
                             foreach ($opciones as $nombre => $emoji): ?>
                                 <label class="cursor-pointer group">
-                                    <input type="radio" name="tipo_comida_manual" value="<?= $nombre ?>" class="hidden peer" <?= ($momentoParaFiltrar === $nombre) ? 'checked' : '' ?>>
+                                    <input type="radio" name="tipo_comida_manual" value="<?= e($nombre) ?>" class="hidden peer" <?= ($tipoBuscado === $nombre) ? 'checked' : '' ?>>
                                     <div class="p-4 bg-gray-50 border-2 border-transparent rounded-2xl text-center transition-all peer-checked:bg-teal-50 peer-checked:border-teal-500 group-hover:bg-gray-100">
                                         <span class="block text-xl mb-1"><?= $emoji ?></span>
                                         <span class="block text-[10px] font-black uppercase text-gray-500 peer-checked:text-teal-700"><?= $nombre ?></span>
@@ -297,11 +274,11 @@ include_once __DIR__ . '/../templates/header.php';
                         <div class="flex gap-4">
                             <div class="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
                                 <span class="block text-[9px] font-black uppercase opacity-60">Kcal</span>
-                                <span class="text-xl font-black"><?= $receta['calorias'] ?></span>
+                                <span class="text-xl font-black"><?= e(round((float) $receta['calorias'])) ?></span>
                             </div>
                             <div class="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
                                 <span class="block text-[9px] font-black uppercase opacity-60">Proteína</span>
-                                <span class="text-xl font-black"><?= $receta['macros']['proteinas'] ?>g</span>
+                                <span class="text-xl font-black"><?= e(round((float) $receta['macros']['proteinas'])) ?>g</span>
                             </div>
                         </div>
                     </div>
@@ -324,7 +301,7 @@ include_once __DIR__ . '/../templates/header.php';
                             <?php foreach ($receta['ingredientes_usados'] as $ing): ?>
                                 <div class="p-4 bg-gray-50 rounded-2xl text-sm border border-gray-100 flex justify-between">
                                     <span class="text-gray-500 font-bold italic"><?= htmlspecialchars($ing['nombre']) ?></span>
-                                    <span class="font-black text-gray-800 tracking-tighter"><?= $ing['cantidad'] ?> <?= $ing['unidad'] ?? '' ?></span>
+                                    <span class="font-black text-gray-800 tracking-tighter"><?= e($ing['cantidad']) ?> <?= e($ing['unidad'] ?? '') ?></span>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -348,21 +325,9 @@ include_once __DIR__ . '/../templates/header.php';
 
                 <!-- Formulario de Guardado: Envía el JSON de la IA a la base de datos -->
                 <div class="p-8 bg-gray-50 border-t border-gray-100">
+                    <!-- La receta está guardada en la sesión del servidor; aquí solo se confirma -->
                     <form method="POST" action="guardar_receta_ia.php">
-                        <?php 
-                        $json_seguro = json_encode($receta);
-                        $json_seguro = str_replace(["\r", "\n"], '\n', $json_seguro);
-                        
-                        // CAPTURA LITERAL: Tomamos lo que viene de la URL o del manual sin filtros
-                        $momentoParaGuardar = $momentoUrl ?: ($_POST['tipo_comida_manual'] ?? 'Almuerzo');
-                        ?>
-
-                        <input type="hidden" name="receta_data" value='<?= htmlspecialchars($json_seguro, ENT_QUOTES, "UTF-8") ?>'>
-                        <input type="hidden" name="dia_contexto" value="<?= htmlspecialchars($diaUrl ?? '') ?>">
-                        
-                        <!-- Enviamos el valor literal (ej: "Media Mañana") para que coincida con tu URL -->
-                        <input type="hidden" name="momento_contexto" value="<?= htmlspecialchars($momentoParaGuardar) ?>">
-                        
+                        <?= campoCsrf() ?>
                         <button type="submit" name="save_recipe" class="w-full bg-gray-900 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-widest">
                             💾 <?= ($diaUrl) ? 'Guardar y añadir al Plan' : 'Guardar en Mis Recetas' ?>
                         </button>
@@ -375,7 +340,7 @@ include_once __DIR__ . '/../templates/header.php';
         <section class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
             <h2 class="text-xs font-black text-gray-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-2">
                 <span class="w-2 h-2 bg-gray-200 rounded-full"></span>
-                Tus <?= $tipoBuscado ?>s Guardados
+                Tus <?= e($tipoBuscado) ?>s Guardados
             </h2>
             
             <?php if (empty($misRecetas)): ?>
@@ -389,14 +354,15 @@ include_once __DIR__ . '/../templates/header.php';
                             <div>
                                 <h4 class="font-black text-gray-800 text-sm italic mb-1 tracking-tight"><?= htmlspecialchars($r['titulo']) ?></h4>
                                 <p class="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
-                                    <span class="text-teal-600 font-black italic">🔥 <?= $r['calorias_por_racion'] ?> kcal</span> • 💪 <?= $r['proteinas_g_por_racion'] ?>g Proteína
+                                    <span class="text-teal-600 font-black italic">🔥 <?= (int) $r['calorias_por_racion'] ?> kcal</span> • 💪 <?= e(round((float) $r['proteinas_g_por_racion'])) ?>g Proteína
                                 </p>
                             </div>
                             <?php if($diaUrl): ?>
                                 <form method="POST">
-                                    <input type="hidden" name="id_receta_seleccionada" value="<?= $r['id_receta'] ?>">
-                                    <input type="hidden" name="dia_contexto" value="<?= htmlspecialchars($diaUrl) ?>">
-                                    <input type="hidden" name="momento_contexto" value="<?= htmlspecialchars($momentoUrl) ?>">
+                                    <?= campoCsrf() ?>
+                                    <input type="hidden" name="id_receta_seleccionada" value="<?= (int) $r['id_receta'] ?>">
+                                    <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
+                                    <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
                                     <button type="submit" name="seleccionar_existente" class="bg-gray-50 text-gray-400 group-hover:bg-teal-600 group-hover:text-white p-3 rounded-xl transition-all shadow-sm">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
                                     </button>

@@ -108,6 +108,7 @@ include_once __DIR__ . '/../templates/header.php';
         <div class="bg-gray-900 p-8 rounded-[40px] shadow-2xl flex flex-col justify-center">
             <p class="text-[10px] text-teal-400 uppercase font-black tracking-widest mb-4">Añadir Paciente por Email</p>
             <form method="POST" action="vincula_paciente.php" class="space-y-3">
+                <?= campoCsrf() ?>
                 <div class="relative">
                     <input type="email" name="email_busqueda" placeholder="ejemplo@correo.com" 
                            class="w-full bg-white/10 border border-white/5 px-5 py-3 rounded-2xl text-xs font-medium text-white outline-none focus:border-teal-500 transition-all placeholder:text-gray-600" required>
@@ -163,21 +164,25 @@ include_once __DIR__ . '/../templates/header.php';
                         <!-- Identificación -->
                         <td class="px-8 py-6 text-center border-y">
                             <span class="bg-gray-50 text-gray-700 px-4 py-2 rounded-xl text-xs font-black">
-                                <?= !empty($p['peso_kg']) ? $p['peso_kg'] . ' KG' : '--' ?>
+                                <?= !empty($p['peso_kg']) ? e($p['peso_kg']) . ' KG' : '--' ?>
                             </span>
                         </td>
                         <!-- Métricas Nutricionales -->
                         <td class="px-8 py-6 text-center border-y">
                             <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 bg-gray-50 px-3 py-1 rounded-lg">
-                                <?= str_replace('_', ' ', $p['objetivo'] ?? 'Pendiente') ?>
+                                <?= e(str_replace('_', ' ', $p['objetivo'] ?? 'Pendiente')) ?>
                             </span>
                         </td>
                         <!-- Acción: Login simulado como paciente para gestión directa -->
                         <td class="px-8 py-6 text-right rounded-r-[30px] border-y border-r">
-                            <a href="entrar_como_paciente.php?id_paciente=<?= $p['id_usuario'] ?>" 
-                               class="bg-gray-900 text-white px-8 py-4 rounded-2xl text-[10px] font-black hover:bg-teal-600 transition-all uppercase tracking-widest inline-block shadow-lg">
-                                Gestionar
-                            </a>
+                            <form method="POST" action="entrar_como_paciente.php" class="inline-block m-0">
+                                <?= campoCsrf() ?>
+                                <input type="hidden" name="id_paciente" value="<?= (int) $p['id_usuario'] ?>">
+                                <button type="submit"
+                                   class="bg-gray-900 text-white px-8 py-4 rounded-2xl text-[10px] font-black hover:bg-teal-600 transition-all uppercase tracking-widest inline-block shadow-lg">
+                                    Gestionar
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     <?php endforeach; ?>

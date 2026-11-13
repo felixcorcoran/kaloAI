@@ -34,9 +34,9 @@ $nutricionistas = $pdo->query("
     WHERE u.id_rol = 2 AND u.activo = 1
 ")->fetchAll();
 
-// Listado maestro ampliado con Hash y Fecha para Supervisión de Seguridad
+// Listado maestro de usuarios (sin el hash de la contraseña: el panel no lo necesita)
 $usuarios = $pdo->query("
-    SELECT u.id_usuario, u.correo, u.id_rol, u.activo, u.contrasena_hash, u.fecha_creacion, p.nombre AS nombre_usuario, p.id_nutricionista
+    SELECT u.id_usuario, u.correo, u.id_rol, u.activo, u.fecha_creacion, p.nombre AS nombre_usuario, p.id_nutricionista
     FROM usuario u
     LEFT JOIN perfil p ON u.id_usuario = p.id_usuario
     ORDER BY u.id_rol ASC, u.id_usuario DESC
@@ -54,6 +54,11 @@ include_once __DIR__ . '/../templates/header.php';
     <?php if (isset($_GET['msg']) && $_GET['msg'] === 'borrado_exitoso'): ?>
         <div id="successAlert" class="mb-8 bg-teal-500 text-white px-8 py-4 rounded-[25px] shadow-lg font-black uppercase text-[12px] tracking-widest animate-pulse flex justify-between items-center">
             <span>¡Usuario eliminado del sistema correctamente!</span>
+            <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100">✕</button>
+        </div>
+    <?php elseif (isset($_GET['msg']) && in_array($_GET['msg'], ['borrado_fallido', 'no_autoborrado'], true)): ?>
+        <div class="mb-8 bg-red-500 text-white px-8 py-4 rounded-[25px] shadow-lg font-black uppercase text-[12px] tracking-widest flex justify-between items-center">
+            <span><?= $_GET['msg'] === 'no_autoborrado' ? 'No puedes eliminar tu propia cuenta.' : 'No se pudo eliminar el usuario. Inténtalo de nuevo.' ?></span>
             <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100">✕</button>
         </div>
     <?php endif; ?>
