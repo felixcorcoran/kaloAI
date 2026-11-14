@@ -10,6 +10,7 @@ session_start();
 
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/recetas.php';
 
 // 1. SEGURIDAD: Garantizar que solo usuarios identificados accedan a sus datos
 if (!isset($_SESSION['user_id'])) {
@@ -38,88 +39,11 @@ $stmtNec = $pdo->prepare($sqlNecesario);
 $stmtNec->execute([$userId]);
 $necesariosRaw = $stmtNec->fetchAll();
 
-// 2. PROCESAMIENTO Y LIMPIEZA DE DATOS (Normalización)
-$necesariosProcesados = [];
-
-foreach ($necesariosRaw as $nec) {
-    // --- LIMPIEZA LINGÜÍSTICA ---
-    // Convertimos a minúsculas y eliminamos tildes para evitar duplicidad (ej: "Tomate" vs "tomate")
-    $nombreOriginal = trim($nec['nombre_ingrediente']);
-    $nombreNorm = mb_strtolower($nombreOriginal, 'UTF-8');
-    $nombreNorm = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $nombreNorm);
-    
-    // FILTRADO DE ADJETIVOS: Eliminamos palabras que no definen el producto base
-    // Esto permite que "Arroz cocido" se sume con "Arroz"
-    $palabras_sobrantes = [
-        'cocido', 'en seco', 'peso en seco', 'en hojuelas', 'en copos', 
-        'integrales', 'blanco', '(peso )', '(peso)', 'frescas', 'semidesnatada'
-    ];
-    $nombreNorm = str_replace($palabras_sobrantes, '', $nombreNorm);
-    $nombreNorm = trim($nombreNorm);
-
-    // --- UNIFICACIÓN DE UNIDADES REBELDES ---
-    $unidad = $nec['unidad'];
-    
-    // Homogeneización forzada para líquidos comunes (Aceite/Leche) 
-    // Asegura que si una receta pide 'g' y otra 'ml', se agrupen bajo la misma métrica
-    if (strpos($nombreNorm, 'aceite') !== false || strpos($nombreNorm, 'leche') !== false) {
-        $unidad = 'ml';
-    }
-
-    // Cálculo de volumen total según raciones planificadas
-    $cantidadTotal = $nec['cantidad'] * $nec['raciones'];
-
-    // Creación de Clave Única (Nombre + Unidad) para agrupar ingredientes idénticos
-    $key = $nombreNorm . "_" . $unidad;
-
-    if (!isset($necesariosProcesados[$key])) {
-        $necesariosProcesados[$key] = [
-            'nombre' => ucfirst($nombreNorm), // Capitalizamos para la vista final
-            'cantidad' => 0,
-            'unidad' => $unidad
-        ];
-    }
-    $necesariosProcesados[$key]['cantidad'] += $cantidadTotal;
-}
-
-/* ==========================================================================
-   3. OBTENCIÓN DE SUMINISTROS (Inventario)
-   Normalizamos el inventario con el mismo criterio para que el "match" sea exacto
-   ========================================================================== */
+// Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
+// sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.
 $stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
 $stmtInv->execute([$userId]);
-$inventarioRaw = $stmtInv->fetchAll();
-
-$inventarioProcesado = [];
-foreach ($inventarioRaw as $inv) {
-    $nInv = mb_strtolower(trim($inv['nombre_ingrediente']), 'UTF-8');
-    $nInv = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $nInv);
-    $uInv = $inv['unidad'];
-    
-    // Almacenamos lo que ya existe en despensa usando la clave única
-    $inventarioProcesado[$nInv . "_" . $uInv] = $inv['cantidad'];
-}
-
-/* ==========================================================================
-   4. CRUCE DE DATOS Y CÁLCULO DE FALTANTES
-   Comparamos: [Lo que necesito para la semana] - [Lo que tengo en casa]
-   ========================================================================== */
-$listaCompra = [];
-foreach ($necesariosProcesados as $key => $data) {
-    $tengo = $inventarioProcesado[$key] ?? 0;
-    $falta = $data['cantidad'] - $tengo;
-
-    // Solo se añade a la lista si la cantidad necesaria supera lo disponible en inventario
-    if ($falta > 0) {
-        $listaCompra[] = [
-            'nombre' => $data['nombre'],
-            'total_recetas' => $data['cantidad'], // Demanda bruta
-            'en_despensa' => $tengo,              // Stock actual
-            'comprar' => $falta,                  // Cantidad neta a adquirir
-            'unidad' => $data['unidad']
-        ];
-    }
-}
+$listaCompra = calcularListaCompra($necesariosRaw, $stmtInv->fetchAll());
 
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php';
@@ -178,12 +102,12 @@ include_once __DIR__ . '/../templates/header.php';
                                 <!-- Desglose de Cantidades: Muestra el requerimiento total vs lo disponible -->
                                 <div class="flex items-center gap-2 mt-1">
                                     <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs font-bold rounded-md uppercase">
-                                        Necesitas: <?= (float)$item['total_recetas'] ?> <?= $item['unidad'] . ($item['unidad'] == 'unidad' && $item['total_recetas'] > 1 ? 'es' : '') ?>
+                                        Necesitas: <?= (float)$item['total_recetas'] ?> <?= e($item['unidad'] . ($item['unidad'] == 'unidad' && $item['total_recetas'] > 1 ? 'es' : '')) ?>
                                     </span>
                                     
                                     <?php if($item['en_despensa'] > 0): ?>
                                         <span class="px-2 py-0.5 bg-amber-50 text-amber-600 text-xs font-bold rounded-md uppercase">
-                                            Tienes: <?= (float)$item['en_despensa'] ?> <?= $item['unidad'] . ($item['unidad'] == 'unidad' && $item['total_recetas'] > 1 ? 'es' : '') ?>
+                                            Tienes: <?= (float)$item['en_despensa'] ?> <?= e($item['unidad'] . ($item['unidad'] == 'unidad' && $item['total_recetas'] > 1 ? 'es' : '')) ?>
                                         </span>
                                     <?php endif; ?>
                                 </div>
@@ -198,15 +122,16 @@ include_once __DIR__ . '/../templates/header.php';
                                 <span class="block text-[10px] uppercase tracking-widest font-black text-gray-400">Faltante</span>
                                 <div class="text-3xl font-black text-teal-600 leading-none">
                                     +<?= round($item['comprar'], 2) ?>
-                                    <span class="text-sm font-bold text-teal-400"><?= $item['unidad'] . ($item['unidad'] == 'unidad' && $item['total_recetas'] > 1 ? 'es' : '') ?></span>
+                                    <span class="text-sm font-bold text-teal-400"><?= e($item['unidad'] . ($item['unidad'] == 'unidad' && $item['total_recetas'] > 1 ? 'es' : '')) ?></span>
                                 </div>
                             </div>
 
                             <!-- Botón de Acción: Al pulsar, el item suele moverse al Inventario automáticamente -->
                             <form action="comprar_item.php" method="POST" class="m-0">
-                                <input type="hidden" name="nombre" value="<?= htmlspecialchars($item['nombre']) ?>">
-                                <input type="hidden" name="cantidad" value="<?= $item['comprar'] ?>">
-                                <input type="hidden" name="unidad" value="<?= $item['unidad'] ?>">
+                                <?= campoCsrf() ?>
+                                <input type="hidden" name="nombre" value="<?= e($item['nombre']) ?>">
+                                <input type="hidden" name="cantidad" value="<?= e($item['comprar']) ?>">
+                                <input type="hidden" name="unidad" value="<?= e($item['unidad']) ?>">
                                 
                                 <button type="submit" class="flex items-center gap-2 bg-gray-900 hover:bg-green-600 text-white px-5 py-3 rounded-2xl font-black text-[16px] tracking-widest uppercase transition-all active:scale-95 shadow-lg shadow-gray-200 hover:shadow-green-100">
                                     <span>✅</span>

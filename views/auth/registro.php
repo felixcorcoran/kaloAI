@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Consolidación de errores para mostrar en la UI
     if (!empty($errors)) {
-        $message = "<ul><li>" . implode("</li><li>", $errors) . "</li></ul>";
+        $message = "<ul><li>" . implode("</li><li>", array_map('e', $errors)) . "</li></ul>";
         $messageType = 'error';
     }
 }
@@ -132,6 +132,7 @@ include_once __DIR__ . '/../templates/header.php';
 
         <!-- FORMULARIO DE ALTA: Captura de nuevos perfiles -->
         <form method="POST" action="registro.php" class="space-y-5">
+            <?= campoCsrf() ?>
             <div>
                 <label for="nombre" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-2">Nombre Completo</label>
                 <input id="nombre" name="nombre" type="text" required 

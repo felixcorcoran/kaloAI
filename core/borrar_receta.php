@@ -13,14 +13,15 @@ require_once __DIR__ . '/utilidades.php';
  * Validamos la sesión y la existencia del parámetro ID antes de proceder.
  * Si no se cumplen los requisitos, redirigimos a la biblioteca de recetas.
  */
-if (!isset($_SESSION['user_id']) || !isset($_GET['id'])) {
+// Solo por POST con token CSRF (lo comprueba utilidades.php)
+if (!isset($_SESSION['user_id']) || $_SERVER['REQUEST_METHOD'] !== 'POST' || !filter_var($_POST['id'] ?? null, FILTER_VALIDATE_INT)) {
     header("Location: ../views/user/mis_recetas.php");
     exit;
 }
 
 $pdo = connectDB();
 $userId = $_SESSION['user_id'];
-$recetaId = $_GET['id'];
+$recetaId = (int) $_POST['id'];
 
 try {
     /**
@@ -38,7 +39,10 @@ try {
          * A. ELIMINACIÓN DEL PLAN SEMANAL
          * Limpiamos las referencias de esta receta en el calendario de comidas planificadas.
          */
-        $pdo->prepare("DELETE FROM comida_planificada WHERE id_receta = ?")->execute([$recetaId]);
+        // Solo las comidas del plan de este usuario (la receta es suya, pero así queda explícito)
+        $pdo->prepare("DELETE cp FROM comida_planificada cp
+                       JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
+                       WHERE cp.id_receta = ? AND ps.id_usuario = ?")->execute([$recetaId, $userId]);
 
         /**
          * B. ELIMINACIÓN DE DETALLES
@@ -50,7 +54,7 @@ try {
          * C. ELIMINACIÓN DE LA CABECERA
          * Finalmente, eliminamos el registro principal de la receta.
          */
-        $pdo->prepare("DELETE FROM receta WHERE id_receta = ?")->execute([$recetaId]);
+        $pdo->prepare("DELETE FROM receta WHERE id_receta = ? AND id_usuario_creador = ?")->execute([$recetaId, $userId]);
         
         // Confirmamos todos los cambios en la base de datos
         $pdo->commit();

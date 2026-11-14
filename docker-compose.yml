@@ -1,0 +1,43 @@
+# KaloAI en local con un solo comando:
+#   docker compose up --build
+# y abre http://localhost:8080 (cuentas de prueba en database/datos_demo.sql).
+#
+# Para generar recetas con IA, pon tu clave antes de arrancar:
+#   GEMINI_API_KEY=tu_clave docker compose up --build
+# La base de datos se crea con el esquema y los datos de ejemplo la primera vez;
+# para empezar de cero: docker compose down -v
+
+services:
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: kaloai-root
+      MARIADB_DATABASE: kaloai_db
+      MARIADB_USER: kaloai
+      MARIADB_PASSWORD: kaloai
+    volumes:
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/datos_demo.sql:/docker-entrypoint-initdb.d/02_datos_demo.sql:ro
+      - datos:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: kaloai_db
+      DB_USER: kaloai
+      DB_PASS: kaloai
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  datos:

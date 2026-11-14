@@ -8,6 +8,7 @@
 ob_start();
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
+require_once __DIR__ . '/../../core/utilidades.php'; // incluye la comprobación del token CSRF
 
 /* ==========================================================================
    SEGURIDAD DE ACCESO
@@ -18,7 +19,10 @@ if (!isset($_SESSION['user_role_id']) || $_SESSION['user_role_id'] > 2) {
     exit;
 }
 
-$idPaciente = $_GET['id_paciente'] ?? null;
+// Solo por POST con token CSRF: cambiar de identidad no puede depender de un enlace
+$idPaciente = ($_SERVER['REQUEST_METHOD'] === 'POST')
+    ? filter_var($_POST['id_paciente'] ?? null, FILTER_VALIDATE_INT)
+    : null;
 $nutriId = $_SESSION['user_id'];
 $pdo = connectDB();
 
@@ -56,7 +60,8 @@ if ($stmt->fetch()) {
     header("Location: ../dashboard.php");
 } else {
     // Intento de acceso no autorizado a un paciente ajeno
-    echo "Error de seguridad: No tienes permiso para gestionar a este usuario o el vínculo no existe.";
+    http_response_code(403);
+    echo "No tienes permiso para gestionar a este usuario o el vínculo no existe.";
 }
 
 ob_end_flush();

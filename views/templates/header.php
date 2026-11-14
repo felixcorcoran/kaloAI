@@ -8,6 +8,7 @@
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/../../core/seguridad.php';
 
 // 2. Variables de configuración de rutas
 $appName = "KaloAI";
@@ -51,6 +52,8 @@ $inicial = function_exists('mb_substr')
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Token CSRF para las peticiones que hace main.js (fetch y formularios creados al vuelo) -->
+    <meta name="csrf-token" content="<?= e(csrfToken()) ?>">
     <title><?php echo htmlspecialchars($pageTitle ?? $appName); ?></title>
     <?php include __DIR__ . '/tema.php'; ?>
     
@@ -70,24 +73,12 @@ $inicial = function_exists('mb_substr')
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 
-    <!-- RECURSOS EXTERNOS: Frameworks de UI y estilos personalizados -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        // Solo tipografía: Inter como fuente base y Plus Jakarta Sans como
-        // fuente de titulares (clase font-display)
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
-                        display: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-                    },
-                },
-            },
-        };
-    </script>
+    <!-- RECURSOS EXTERNOS Y ESTILOS -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="<?= BASE_URL ?>public/css/style.css">
+    <!-- TAILWIND COMPILADO (npm run build:css). Va después de style.css, en el mismo
+         orden en que el CDN inyectaba sus estilos; las fuentes están en tailwind.config.js -->
+    <link rel="stylesheet" href="<?= BASE_URL ?>public/css/tailwind.css?v=<?= @filemtime(__DIR__ . '/../../public/css/tailwind.css') ?>">
 </head>
 <body class="bg-gray-50 antialiased">
     <!-- MODO OSCURO: después de los estilos de Tailwind para poder sobrescribirlos -->
@@ -109,10 +100,13 @@ $inicial = function_exists('mb_substr')
                     </span>
                 </div>
                 <!-- Acción para revertir la suplantación y volver al panel de nutricionista -->
-                <a href="<?= BASE_URL ?>views/nutri/salir_paciente.php"
-                   class="shrink-0 rounded-full bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-600 shadow-sm transition hover:bg-orange-50">
-                    Finalizar Gestión
-                </a>
+                <form method="POST" action="<?= BASE_URL ?>views/nutri/salir_paciente.php" class="m-0 shrink-0">
+                    <?= campoCsrf() ?>
+                    <button type="submit"
+                       class="rounded-full bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-600 shadow-sm transition hover:bg-orange-50">
+                        Finalizar Gestión
+                    </button>
+                </form>
             </div>
         </div>
     <?php endif; ?>

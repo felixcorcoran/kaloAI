@@ -1,0 +1,12 @@
+{
+  "name": "kaloai",
+  "private": true,
+  "description": "Compila el CSS de Tailwind de KaloAI",
+  "scripts": {
+    "build:css": "tailwindcss -i public/css/tailwind.src.css -o public/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i public/css/tailwind.src.css -o public/css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.19"
+  }
+}

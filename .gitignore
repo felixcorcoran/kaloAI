@@ -14,3 +14,11 @@ error_log
 # Carpetas de configuración del editor (VS Code, etc.)
 .vscode/
 .idea/
+# Tests
+.phpunit.cache/
+
+# Node (solo para compilar el CSS)
+node_modules/
+
+# Marca local de migraciones aplicadas (core/migraciones.php)
+core/.migraciones_aplicadas

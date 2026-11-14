@@ -76,7 +76,7 @@ include_once __DIR__ . '/../templates/header.php';
             </div>
             <div class="flex-1">
                 <p class="text-sm font-black text-teal-800 italic uppercase tracking-wider leading-none">¡Hecho!</p>
-                <p class="text-xs font-medium text-teal-600 mt-1"><?php echo $_SESSION['mensaje']; ?></p>
+                <p class="text-xs font-medium text-teal-600 mt-1"><?php echo e($_SESSION['mensaje']); ?></p>
             </div>
             <!-- Botón de cierre manual -->
             <button onclick="document.getElementById('notification').remove()" class="text-teal-300 hover:text-teal-600 transition-colors">
@@ -166,8 +166,8 @@ include_once __DIR__ . '/../templates/header.php';
             ?>
                 <!-- TARJETA DE RECETA: Contiene meta-información y macros calculados -->
                 <div class="recipe-card group bg-white rounded-[2.5rem] border-2 border-gray-50 overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-3 transition-all duration-500" 
-                    data-tipo="<?php echo $tipoData; ?>" 
-                    data-titulo="<?php echo mb_strtolower($receta['titulo']); ?>">
+                    data-tipo="<?php echo e($tipoData); ?>" 
+                    data-titulo="<?php echo e(mb_strtolower($receta['titulo'])); ?>">
                     
                     <!-- Header de la tarjeta: Icono central y etiqueta de Calorías -->
                     <div class="relative h-56 <?php echo $estilo['bg']; ?> flex items-center justify-center">
@@ -178,7 +178,7 @@ include_once __DIR__ . '/../templates/header.php';
                     </div>
 
                     <div class="p-8">
-                        <div class="text-[10px] font-black <?php echo $estilo['text']; ?> uppercase tracking-[0.2em] mb-2"><?php echo $receta['tipo_comida']; ?></div>
+                        <div class="text-[10px] font-black <?php echo $estilo['text']; ?> uppercase tracking-[0.2em] mb-2"><?php echo e($receta['tipo_comida']); ?></div>
                         <h3 class="recipe-title text-2xl font-bold text-gray-900 mb-3 italic tracking-tight leading-tight"><?php echo htmlspecialchars($receta['titulo']); ?></h3>
                         
                         <!-- TABLA DE MACROS: Desglose nutricional por ración -->
@@ -189,7 +189,7 @@ include_once __DIR__ . '/../templates/header.php';
                         </div>
 
                         <!-- Enlace al detalle completo -->
-                        <a href="detalle_receta.php?id=<?php echo $receta['id_receta']; ?>" 
+                        <a href="detalle_receta.php?id=<?php echo (int) $receta['id_receta']; ?>" 
                         class="block text-center font-black uppercase text-xs tracking-widest py-4 rounded-2xl transition-all <?php echo $estilo['btn']; ?>">
                             Ver Detalles
                         </a>

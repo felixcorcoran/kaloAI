@@ -14,6 +14,45 @@ window.recetaParaEliminar = null; // Mantenido por compatibilidad
 window.filtroRecetaActual = 'todos';
 
 /* ==========================================================================
+   SEGURIDAD: token CSRF y envíos por POST
+   ========================================================================== */
+
+/** Token CSRF que la cabecera deja en <meta name="csrf-token">. */
+function tokenCsrf() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+}
+
+/**
+ * Envía una acción por POST con el token CSRF, como un formulario normal.
+ * Las acciones que cambian datos (borrar, aceptar, entrar en modo gestión)
+ * nunca van en un enlace GET: otra web podría dispararlas con una simple imagen.
+ */
+function enviarPost(url, campos = {}) {
+    const formulario = document.createElement('form');
+    formulario.method = 'POST';
+    formulario.action = url;
+    formulario.style.display = 'none';
+    const todos = { ...campos, csrf_token: tokenCsrf() };
+    Object.entries(todos).forEach(([nombre, valor]) => {
+        const campo = document.createElement('input');
+        campo.type = 'hidden';
+        campo.name = nombre;
+        campo.value = valor;
+        formulario.appendChild(campo);
+    });
+    document.body.appendChild(formulario);
+    formulario.submit();
+}
+
+/** Escapa texto antes de meterlo en innerHTML. */
+function escaparHtml(texto) {
+    const div = document.createElement('div');
+    div.textContent = texto == null ? '' : String(texto);
+    return div.innerHTML;
+}
+
+/* ==========================================================================
    2. MÓDULO DE ADMINISTRACIÓN (Usuarios)
    ========================================================================== */
 
@@ -26,10 +65,11 @@ function actualizarCampoUsuario(idUsuario, tipo, valor) {
     datosFormulario.append('action', tipo);
     datosFormulario.append('value', valor);
 
-    fetch('api_admin.php', { method: 'POST', body: datosFormulario })
+    fetch('api_admin.php', { method: 'POST', body: datosFormulario, headers: { 'X-CSRF-Token': tokenCsrf() } })
     .then(respuesta => respuesta.json())
     .then(datos => {
-        if(datos.success) window.location.reload();
+        if (datos.success) window.location.reload();
+        else alert(datos.error || 'No se pudo guardar el cambio.');
     });
 }
 
@@ -42,10 +82,11 @@ function alternarEstadoUsuario(idUsuario, rolUsuario, nuevoValor) {
     datosFormulario.append('action', 'toggle_status');
     datosFormulario.append('value', nuevoValor);
 
-    fetch('api_admin.php', { method: 'POST', body: datosFormulario })
+    fetch('api_admin.php', { method: 'POST', body: datosFormulario, headers: { 'X-CSRF-Token': tokenCsrf() } })
     .then(respuesta => respuesta.json())
-    .then(datos => { 
-        if(datos.success) window.location.reload();
+    .then(datos => {
+        if (datos.success) window.location.reload();
+        else alert(datos.error || 'No se pudo cambiar el estado.');
     });
 }
 
@@ -82,7 +123,7 @@ window.ejecutarEliminacion = function() {
     const id = modal ? modal.getAttribute('data-id-a-eliminar') : null;
 
     if (id && id !== "null") {
-        window.location.href = `borrar_usuario.php?id=${id}`;
+        enviarPost('borrar_usuario.php', { id: id });
     } else {
         alert("Error crítico: El ID no se pudo recuperar del modal.");
     }
@@ -176,7 +217,7 @@ function confirmarEliminarComida(id) {
     const modal = document.getElementById('modalEliminar');
     const btn = document.getElementById('btnConfirmarEliminar');
     if (modal && btn) {
-        btn.href = `?eliminar_id=${id}`;
+        btn.onclick = () => enviarPost('planificacion_semanal.php', { eliminar_id: id });
         modal.classList.remove('hidden');
     }
 }
@@ -302,6 +343,7 @@ function eliminarItemInventario(id) {
     
     formularioBorrado.appendChild(inputAction('action', 'delete'));
     formularioBorrado.appendChild(inputAction('id_inventario', id));
+    formularioBorrado.appendChild(inputAction('csrf_token', tokenCsrf()));
     document.body.appendChild(formularioBorrado);
     formularioBorrado.submit();
 }
@@ -429,7 +471,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (btnConfirmarReceta) {
         btnConfirmarReceta.onclick = function() {
             if (window.recetaParaEliminar) {
-                window.location.href = '../../core/borrar_receta.php?id=' + window.recetaParaEliminar;
+                enviarPost('../../core/borrar_receta.php', { id: window.recetaParaEliminar });
             }
         };
     }
@@ -567,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         botonConfirmarBorrado.addEventListener('click', function() {
             // Utilizamos la variable global "recetaParaEliminar" que definimos antes
             if (recetaParaEliminar) {
-                window.location.href = '../../core/borrar_receta.php?id=' + recetaParaEliminar;
+                enviarPost('../../core/borrar_receta.php', { id: recetaParaEliminar });
             }
         });
     }
@@ -646,9 +688,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Contenido del item
             itemLista.innerHTML = `
                 <span>
-                    <span class="font-medium text-gray-900">${restriccion.ingrediente.toUpperCase()}</span> 
+                    <span class="font-medium text-gray-900">${escaparHtml(restriccion.ingrediente.toUpperCase())}</span> 
                     <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full ${claseTipo}">
-                        ${mapaTipos[restriccion.tipo] || restriccion.tipo}
+                        ${escaparHtml(mapaTipos[restriccion.tipo] || restriccion.tipo)}
                     </span>
                 </span>
             `;

@@ -1,6 +1,22 @@
 <?php
 
 /**
+ * Seguridad común (token CSRF y escapado). Todo POST que llegue a una página
+ * que cargue este archivo debe traer un token válido.
+ */
+require_once __DIR__ . '/seguridad.php';
+exigirCsrfEnPost();
+
+/**
+ * Migraciones de la base de datos: tras un despliegue, la primera visita
+ * aplica las que falten (core/migraciones.php). Si no hay nada nuevo, solo
+ * lee un archivo pequeño.
+ */
+require_once __DIR__ . '/configuracion.php';
+require_once __DIR__ . '/migraciones.php';
+comprobarMigraciones();
+
+/**
  * GESTIÓN DE SEGURIDAD (Contraseñas)
  * Implemento funciones para el manejo seguro de credenciales mediante hashing.
  */
@@ -28,13 +44,14 @@ function verificarContrasena(string $password, string $hash): bool {
  */
 
 /**
- * Limpio las cadenas de texto eliminando etiquetas HTML, barras invertidas y 
- * convirtiendo caracteres especiales para evitar ejecuciones de script maliciosas.
+ * Normalizo el texto que llega de un formulario: quito espacios en los extremos
+ * y caracteres de control invisibles. No lo convierto a HTML: el texto se guarda
+ * tal cual y se escapa al mostrarlo con e() (core/seguridad.php). Escapar al
+ * guardar dejaba "&amp;" en la base de datos y fallaba en los textos que no
+ * pasaban por aquí, como los de la IA.
  */
 function limpiarInput(string $data): string {
-    $data = strip_tags($data);
-    $data = stripslashes($data);
-    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+    $data = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $data) ?? '';
     return trim($data);
 }
 
@@ -266,6 +283,44 @@ if (preg_match('/^(localhost|127\.0\.0\.1)(:\d+)?$/', $kaloHost)) {
     $kaloProyecto = str_replace(DIRECTORY_SEPARATOR, '/', dirname(__DIR__));
     $kaloCarpeta = trim(substr($kaloProyecto, strlen($kaloRaiz)), '/');
     define('BASE_URL', 'http://' . $kaloHost . '/' . ($kaloCarpeta !== '' ? $kaloCarpeta . '/' : ''));
-} else {
-    define('BASE_URL', 'https://kaloai.infinityfreeapp.com/');
+} elseif (!defined('BASE_URL')) {
+    // APP_URL viene de configuracion.php; las configuraciones antiguas no la tienen
+    define('BASE_URL', defined('APP_URL') ? APP_URL : 'https://kaloai.infinityfreeapp.com/');
+}
+
+/**
+ * Factores de actividad física para el TDEE (Mifflin-St Jeor x actividad).
+ */
+const FACTORES_ACTIVIDAD = [
+    'sedentario' => 1.2,
+    'ligero'     => 1.375,
+    'moderado'   => 1.55,
+    'activo'     => 1.725,
+    'muy_activo' => 1.9,
+];
+
+/**
+ * Pone el peso actual en el perfil y, si el perfil está completo, recalcula el
+ * TDEE y los macros objetivo con ese peso. Se usa al registrar o borrar una
+ * medición en "Mi progreso", para que las metas no se queden con el peso antiguo.
+ */
+function actualizarPesoYObjetivos(PDO $pdo, int $userId, float $pesoKg): void {
+    $stmt = $pdo->prepare("SELECT fecha_nacimiento, genero, altura_cm, nivel_actividad, objetivo FROM perfil WHERE id_usuario = ?");
+    $stmt->execute([$userId]);
+    $p = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$p) return;
+
+    $completo = !empty($p['fecha_nacimiento']) && in_array($p['genero'], ['M', 'F'], true)
+        && !empty($p['altura_cm']) && isset(FACTORES_ACTIVIDAD[$p['nivel_actividad'] ?? '']);
+
+    if (!$completo) {
+        $pdo->prepare("UPDATE perfil SET peso_kg = ? WHERE id_usuario = ?")->execute([$pesoKg, $userId]);
+        return;
+    }
+
+    $tdee = calcularTDEE($p['genero'], $pesoKg, (int) $p['altura_cm'], calcularEdad($p['fecha_nacimiento']), FACTORES_ACTIVIDAD[$p['nivel_actividad']]);
+    $macros = calcularMacrosObjetivo($tdee, $p['objetivo'] ?? 'mantenimiento');
+    $pdo->prepare("UPDATE perfil SET peso_kg = ?, tdee_calorias = ?, proteinas_objetivo_g = ?, carbohidratos_objetivo_g = ?,
+                       grasas_objetivo_g = ?, calorias_netas_objetivo = ? WHERE id_usuario = ?")
+        ->execute([$pesoKg, $tdee, $macros['proteinas'], $macros['carbohidratos'], $macros['grasas'], $macros['calorias_netas'], $userId]);
 }

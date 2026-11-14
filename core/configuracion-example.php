@@ -1,39 +1,57 @@
 <?php
 
 /**
- * CONFIGURACIÓN DE PARÁMETROS DE CONEXIÓN (MySQL)
- * Defino las credenciales y el juego de caracteres para la base de datos.
+ * CONFIGURACIÓN DE KALOAI
+ * Copia este archivo como core/configuracion.php (no se sube al repositorio).
+ *
+ * Cada valor se lee primero de una variable de entorno (así funciona sin tocar
+ * nada en Docker y en la integración continua) y, si no existe, usa el valor
+ * escrito aquí. En un hosting sin variables de entorno, como InfinityFree,
+ * escribe tus datos directamente en el segundo argumento de kaloEnv().
  */
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'kaloai_db');
-define('DB_USER', 'root');
-define('DB_PASS', '');          
-define('DB_CHARSET', 'utf8mb4'); 
+function kaloEnv(string $nombre, string $porDefecto = ''): string {
+    $valor = getenv($nombre);
+    return ($valor === false || $valor === '') ? $porDefecto : $valor;
+}
 
 /**
- * CONFIGURACIÓN DE LA API DE GOOGLE GEMINI
- * Listado de claves para la rotación de peticiones y URL del modelo utilizado.
+ * CONEXIÓN A MySQL / MariaDB
  */
-define('GEMINI_API_KEYS', [
-    'xxx',
-    'xxx'
-]);
-define('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent');
+define('DB_HOST', kaloEnv('DB_HOST', 'localhost'));
+define('DB_PORT', kaloEnv('DB_PORT', '3306'));
+define('DB_NAME', kaloEnv('DB_NAME', 'kaloai_db'));
+define('DB_USER', kaloEnv('DB_USER', 'root'));
+define('DB_PASS', kaloEnv('DB_PASS', ''));
+define('DB_CHARSET', 'utf8mb4');
 
 /**
- * Establezco la conexión a la base de datos utilizando PDO.
- * Configuro el manejo de errores mediante excepciones y desactivo la emulación 
- * de sentencias preparadas para mejorar la seguridad contra inyecciones SQL.
+ * API DE GOOGLE GEMINI
+ * Una clave basta. Si pones varias separadas por comas, se usa la siguiente
+ * solo cuando una falla (por ejemplo, si se revoca o caduca).
  */
-function connectDB() {
-    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-    
+define('GEMINI_API_KEYS', array_values(array_filter(array_map('trim', explode(',', kaloEnv('GEMINI_API_KEY', ''))))));
+define('GEMINI_API_URL', kaloEnv('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent'));
+
+/**
+ * URL PÚBLICA DE LA WEB (con barra final)
+ * En localhost se calcula sola; en el hosting se usa esta.
+ */
+define('APP_URL', kaloEnv('APP_URL', 'https://kaloai.infinityfreeapp.com/'));
+
+/**
+ * Abre la conexión con PDO: errores como excepciones, arrays asociativos
+ * y sentencias preparadas reales del motor (sin emulación).
+ */
+function connectDB(): PDO {
+    static $pdo = null;
+    if ($pdo instanceof PDO) {
+        return $pdo;
+    }
+
+    $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
     $options = [
-        // Configuro el modo de error para que lance excepciones y poder capturarlas
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        // Establezco que el retorno por defecto sean arrays asociativos
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        // Refuerzo la seguridad utilizando sentencias preparadas reales del motor MySQL
         PDO::ATTR_EMULATE_PREPARES   => false,
     ];
 
@@ -41,8 +59,8 @@ function connectDB() {
         $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
         return $pdo;
     } catch (\PDOException $e) {
-        // Registro el fallo en el log del sistema y detengo la ejecución con un mensaje controlado
         error_log("Error de conexión a la BD: " . $e->getMessage());
-        die("Error fatal: No se pudo conectar a la base de datos. Consulta los logs del servidor.");
+        http_response_code(503);
+        die("No se pudo conectar a la base de datos. Inténtalo de nuevo en unos minutos.");
     }
 }

@@ -49,12 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_fecha'])) {
         $stmtNuevo->execute([$userId]);
         $nuevoPesoData = $stmtNuevo->fetch(PDO::FETCH_ASSOC);
 
-        // 3. SINCRONIZACIÓN: Actualizar la tabla 'perfil' con el peso remanente
-        $nuevoPeso = $nuevoPesoData ? $nuevoPesoData['peso_kg'] : 0;
-        
-        $sqlPerfilUpdate = "UPDATE perfil SET peso_kg = ?, fecha_actualizacion = NOW() WHERE id_usuario = ?";
-        $stmtUpdatePerfil = $pdo->prepare($sqlPerfilUpdate);
-        $stmtUpdatePerfil->execute([$nuevoPeso, $userId]);
+        // 3. SINCRONIZACIÓN: el perfil pasa a tener el último peso que queda y
+        //    se recalculan sus metas. Si no queda ningún registro, el perfil no
+        //    se toca (antes se ponía el peso a 0 y se rompían los cálculos).
+        if ($nuevoPesoData && $nuevoPesoData['peso_kg'] !== null) {
+            actualizarPesoYObjetivos($pdo, (int) $userId, (float) $nuevoPesoData['peso_kg']);
+        }
 
         $pdo->commit(); // Consolidación de cambios
 
@@ -78,16 +78,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_fecha'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_progreso'])) {
 
     // Sanitización y tipado de datos médicos
-    $fecha = limpiarInput($_POST['fecha']);
-    $peso_kg_input = filter_var($_POST['peso_kg'], FILTER_VALIDATE_FLOAT);
-    $cintura_cm = filter_var($_POST['cintura_cm'], FILTER_VALIDATE_FLOAT);
-    $nota = mb_substr(limpiarInput($_POST['nota']), 0, 100); 
+    $fecha = limpiarInput($_POST['fecha'] ?? '');
+    $peso_kg_input = filter_var($_POST['peso_kg'] ?? '', FILTER_VALIDATE_FLOAT);
+    $cinturaTexto = trim((string) ($_POST['cintura_cm'] ?? ''));
+    $cintura_cm = filter_var($cinturaTexto, FILTER_VALIDATE_FLOAT);
+    $nota = mb_substr(limpiarInput($_POST['nota'] ?? ''), 0, 100);
     $hoy = date('Y-m-d');
     
     $errors = [];
 
     // VALIDACIONES DE INTEGRIDAD NUTRICIONAL
-    if (!$fecha || $fecha > $hoy) {
+    $fechaObj = DateTime::createFromFormat('!Y-m-d', $fecha);
+    if (!$fechaObj || $fechaObj->format('Y-m-d') !== $fecha) {
+        $errors[] = "La fecha no es válida.";
+    } elseif ($fecha > $hoy) {
         $errors[] = "La fecha no puede ser futura.";
     }
 
@@ -95,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_progreso']))
         $errors[] = "Por favor, introduce un peso realista (30 - 350 kg).";
     }
 
-    if ($_POST['cintura_cm'] !== '' && ($cintura_cm < 40 || $cintura_cm > 250)) {
+    if ($cinturaTexto !== '' && ($cintura_cm === false || $cintura_cm < 40 || $cintura_cm > 250)) {
         $errors[] = "La medida de cintura debe estar entre 40 y 250 cm.";
     }
 
@@ -127,9 +131,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_progreso']))
                 $fechaMasReciente = $stmtUltima->fetchColumn();
 
                 if ($fecha >= $fechaMasReciente) {
-                    $sqlPerfil = "UPDATE perfil SET peso_kg = ?, fecha_actualizacion = NOW() WHERE id_usuario = ?";
-                    $stmtU = $pdo->prepare($sqlPerfil);
-                    $stmtU->execute([$peso_kg_input, $userId]);
+                    // También recalcula el TDEE y los macros con el nuevo peso
+                    actualizarPesoYObjetivos($pdo, (int) $userId, (float) $peso_kg_input);
                 }
 
                 $pdo->commit();
@@ -174,7 +177,7 @@ try {
 }
 
 // Inyección de datos al contexto de JavaScript para renderizado de gráficas
-$jsProgresoData = json_encode($progresoData);
+$jsProgresoData = json_html($progresoData); // escapado: una nota con "</script>" no rompe la página
 
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php';
@@ -262,6 +265,7 @@ include_once __DIR__ . '/../templates/header.php';
             Nueva Medición
         </h2>
         <form method="POST" action="progreso.php" class="grid grid-cols-1 md:grid-cols-5 gap-6 items-end">
+            <?= campoCsrf() ?>
             <input type="hidden" name="register_progreso" value="1">
             
             <div class="md:col-span-1">
@@ -359,6 +363,7 @@ include_once __DIR__ . '/../templates/header.php';
         <p class="text-gray-500 text-center mb-8 font-medium">Vas a borrar los datos del <span id="modalFechaDisplay" class="text-gray-900 font-bold"></span>.</p>
         
         <form method="POST" action="progreso.php" id="deleteFormModal" class="flex flex-col gap-3">
+            <?= campoCsrf() ?>
             <input type="hidden" name="delete_fecha" id="modalFechaInput">
             <button type="submit" class="w-full py-4 bg-red-500 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-100">Sí, eliminar</button>
             <button type="button" id="cancelDeleteBtn" class="w-full py-4 bg-gray-50 text-gray-400 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-gray-100 transition-all">Cancelar</button>

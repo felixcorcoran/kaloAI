@@ -1,0 +1,138 @@
+name: Tests
+
+# En cada push y PR se pasan los tests. En main, si pasan, se despliega a
+# InfinityFree por FTP; las migraciones de la base de datos las aplica la web
+# en la primera visita (core/migraciones.php).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:  # para volver a desplegar a mano desde la pestaña Actions
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        # La misma versión que el hosting de producción
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: kaloai_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring, dom
+          coverage: none
+
+      - name: Instalar dependencias
+        run: composer install --no-interaction --prefer-dist
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      # El hosting no tiene Node: public/css/tailwind.css se sube ya compilado.
+      # Si una vista usa una clase nueva y no se ha recompilado, esto falla.
+      - name: Comprobar que el CSS de Tailwind está compilado y al día
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:css
+          git diff --exit-code public/css/tailwind.css || { echo "Ejecuta 'npm run build:css' y sube public/css/tailwind.css"; exit 1; }
+
+      - name: Comprobar la sintaxis de todos los PHP
+        run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l > /dev/null
+
+      - name: Tests (unitarios y contra MariaDB)
+        env:
+          KALOAI_TEST_DB_NAME: kaloai_test
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: root
+        # --fail-on-skipped: si la base de datos no estuviera disponible, los
+        # tests de integración se saltarían; aquí eso cuenta como fallo
+        run: vendor/bin/phpunit --fail-on-skipped
+
+  desplegar:
+    needs: tests
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # Nunca dos despliegues a la vez; uno nuevo espera a que acabe el anterior
+    concurrency:
+      group: despliegue-produccion
+      cancel-in-progress: false
+    environment:
+      name: produccion
+      url: https://kaloai.infinityfreeapp.com/
+
+    steps:
+      - name: Comprobar que el FTP está configurado
+        id: config
+        env:
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          if [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+            echo "::warning::Despliegue omitido: faltan los secretos FTP_USERNAME y FTP_PASSWORD (ver README, «Despliegue»)."
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.config.outputs.listo == 'si'
+
+      - uses: shivammathur/setup-php@v2
+        if: steps.config.outputs.listo == 'si'
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Dependencias de producción (sin PHPUnit)
+        if: steps.config.outputs.listo == 'si'
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+          # vendor/ no tiene nada que deba abrirse desde el navegador
+          echo "Require all denied" > vendor/.htaccess
+
+      - name: Subir por FTP (solo lo que ha cambiado)
+        if: steps.config.outputs.listo == 'si'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ vars.FTP_SERVER || 'ftpupload.net' }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          server-dir: ${{ vars.FTP_DIR || 'htdocs/' }}
+          # Lo que no se sube. La configuración del servidor (core/configuracion.php)
+          # no está en el repositorio y además se excluye: nunca se sobrescribe.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            .github/**
+            tests/**
+            docs/**
+            .phpunit.cache/**
+            core/configuracion.php
+            core/.migraciones_aplicadas
+            database/schema.sql
+            database/datos_demo.sql
+            Dockerfile
+            docker-compose.yml
+            .dockerignore
+            phpunit.xml
+            package.json
+            package-lock.json
+            tailwind.config.js
+            public/css/tailwind.src.css
+            README.md

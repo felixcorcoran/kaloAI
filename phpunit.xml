@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         failOnWarning="true"
+         failOnDeprecation="true"
+         cacheDirectory=".phpunit.cache">
+    <php>
+        <!-- Los avisos de error_log() de la app no ensucian la salida de los tests -->
+        <ini name="error_log" value="/dev/null"/>
+    </php>
+    <testsuites>
+        <!-- Funciones puras: no necesitan base de datos ni red -->
+        <testsuite name="unitarios">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <!-- Contra una base de datos de pruebas real (ver tests/bootstrap.php) -->
+        <testsuite name="integracion">
+            <directory>tests/Integracion</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>core</directory>
+        </include>
+    </source>
+</phpunit>

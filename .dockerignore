@@ -1,0 +1,7 @@
+.git
+vendor
+.phpunit.cache
+# Tu configuración local (con contraseñas) nunca entra en la imagen
+core/configuracion.php
+.env
+*.log

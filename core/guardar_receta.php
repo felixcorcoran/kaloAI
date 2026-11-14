@@ -1,13 +1,14 @@
 <?php
 /**
  * CONTROLADOR: GUARDAR RECETA - KaloAI
- * Gestiona la persistencia de recetas (Creación y Edición).
- * Implementa transacciones SQL para asegurar la integridad entre la receta y sus ingredientes.
+ * Crea o edita una receta escrita a mano con sus ingredientes, en una sola
+ * transacción. Los ingredientes llegan uno por línea ("150 g Pechuga de pollo").
  */
 
 session_start();
 require_once __DIR__ . '/configuracion.php';
-require_once __DIR__ . '/utilidades.php';
+require_once __DIR__ . '/utilidades.php'; // incluye la comprobación del token CSRF
+require_once __DIR__ . '/recetas.php';
 
 // 1. CONTROL DE ACCESO
 if (!isset($_SESSION['user_id'])) {
@@ -15,133 +16,92 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Procesar solo si el método es POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $pdo = connectDB();
-    $userId = $_SESSION['user_id'];
-    $errores = [];
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header("Location: ../views/user/mis_recetas.php");
+    exit;
+}
 
-    /**
-     * 2. RECOLECCIÓN Y MAPEO DE DATOS
-     * Se ajustan los nombres para que coincidan exactamente con los 'name' del formulario HTML.
-     */
-    $idReceta      = $_POST['id_receta'] ?? null; // Si existe, es una EDICIÓN
-    $titulo        = trim($_POST['titulo'] ?? '');
-    $tipo_comida   = $_POST['tipo_comida'] ?? '';
-    
-    // Mapeo crucial: capturamos los nombres largos del formulario
-    $calorias      = filter_var($_POST['calorias_por_racion'] ?? 0, FILTER_VALIDATE_FLOAT) ?: 0.0;
-    $proteinas     = filter_var($_POST['proteinas_g_por_racion'] ?? 0, FILTER_VALIDATE_FLOAT) ?: 0.0;
-    $carbohidratos = filter_var($_POST['carbohidratos_g_por_racion'] ?? 0, FILTER_VALIDATE_FLOAT) ?: 0.0;
-    $grasas        = filter_var($_POST['grasas_g_por_racion'] ?? 0, FILTER_VALIDATE_FLOAT) ?: 0.0;
-    
-    $ingredientesText = trim($_POST['ingredientes'] ?? '');
-    $instrucciones    = trim($_POST['instrucciones'] ?? '');
+$pdo = connectDB();
+$userId = (int) $_SESSION['user_id'];
+$errores = [];
 
-    /**
-     * 3. VALIDACIONES
-     */
-    if (empty($titulo)) $errores[] = "El título es obligatorio.";
-    if (empty($ingredientesText)) $errores[] = "Debes añadir al menos un ingrediente.";
-    if (empty($instrucciones)) $errores[] = "Las instrucciones son obligatorias.";
+// 2. RECOGIDA DE DATOS
+$idReceta = filter_var($_POST['id_receta'] ?? null, FILTER_VALIDATE_INT) ?: null; // si existe, es una edición
+$titulo = mb_substr(limpiarInput($_POST['titulo'] ?? ''), 0, 200);
+$tipoComida = tipoRecetaParaMomento($_POST['tipo_comida'] ?? '');
 
-    if (!empty($errores)) {
-        $_SESSION['errores_form'] = $errores;
-        $_SESSION['post_data'] = $_POST;
-        header("Location: " . $_SERVER['HTTP_REFERER']);
+$numero = fn($campo) => max(0.0, (float) (filter_var($_POST[$campo] ?? 0, FILTER_VALIDATE_FLOAT) ?: 0.0));
+$calorias = (int) round($numero('calorias_por_racion'));
+$proteinas = $numero('proteinas_g_por_racion');
+$carbohidratos = $numero('carbohidratos_g_por_racion');
+$grasas = $numero('grasas_g_por_racion');
+
+$ingredientes = unificarIngredientes(array_values(array_filter(array_map(
+    'parsearLineaIngrediente',
+    preg_split('/\R/u', (string) ($_POST['ingredientes'] ?? ''))
+))));
+$instrucciones = trim((string) ($_POST['instrucciones'] ?? ''));
+
+// 3. VALIDACIONES
+if ($titulo === '') $errores[] = "El título es obligatorio.";
+if (!$ingredientes) $errores[] = "Debes añadir al menos un ingrediente.";
+if ($instrucciones === '') $errores[] = "Las instrucciones son obligatorias.";
+
+// En una edición, la receta tiene que ser de esta persona. Sin esta comprobación,
+// con el id de otra receta se podían borrar y reemplazar sus ingredientes.
+if ($idReceta) {
+    $propia = $pdo->prepare("SELECT 1 FROM receta WHERE id_receta = ? AND id_usuario_creador = ?");
+    $propia->execute([$idReceta, $userId]);
+    if (!$propia->fetchColumn()) {
+        header("Location: ../views/user/mis_recetas.php");
         exit;
     }
+}
 
-    try {
-        $pdo->beginTransaction();
+if ($errores) {
+    $_SESSION['errores_form'] = $errores;
+    $_SESSION['post_data'] = $_POST;
+    header("Location: ../views/user/" . ($idReceta ? "editar_receta.php?id=$idReceta" : "crear_receta.php"));
+    exit;
+}
 
-        if ($idReceta) {
-            /**
-             * 4. MODO EDICIÓN (UPDATE)
-             * Solo actualiza si el usuario es el creador original (Seguridad).
-             */
-            $sql = "UPDATE receta SET 
-                        titulo = ?, 
-                        tipo_comida = ?, 
-                        calorias_por_racion = ?, 
-                        proteinas_g_por_racion = ?, 
-                        carbohidratos_g_por_racion = ?, 
-                        grasas_g_por_racion = ?, 
-                        descripcion = ?
-                    WHERE id_receta = ? AND id_usuario_creador = ?";
-            
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([
-                $titulo, 
-                ucfirst($tipo_comida), 
-                $calorias, 
-                $proteinas, 
-                $carbohidratos, 
-                $grasas, 
-                $instrucciones, 
-                $idReceta, 
-                $userId
-            ]);
+try {
+    $pdo->beginTransaction();
 
-            // Limpiamos los ingredientes antiguos para re-insertar los nuevos (evita duplicados)
-            $stmtDel = $pdo->prepare("DELETE FROM detalle_receta WHERE id_receta = ?");
-            $stmtDel->execute([$idReceta]);
-            
-            $idFinal = $idReceta;
-
-        } else {
-            /**
-             * 5. MODO CREACIÓN (INSERT)
-             */
-            $sql = "INSERT INTO receta (
-                        titulo, tipo_comida, calorias_por_racion, 
-                        proteinas_g_por_racion, carbohidratos_g_por_racion, 
-                        grasas_g_por_racion, descripcion, id_usuario_creador, generado_ia
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)";
-            
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([
-                $titulo, 
-                ucfirst($tipo_comida), 
-                $calorias, 
-                $proteinas, 
-                $carbohidratos, 
-                $grasas, 
-                $instrucciones, 
-                $userId
-            ]);
-            
-            $idFinal = $pdo->lastInsertId();
-        }
-
-        /**
-         * 6. PROCESAMIENTO DE INGREDIENTES
-         * Se ejecuta tanto para Insert como para Update (tras el DELETE previo).
-         */
-        if (!empty($ingredientesText)) {
-            $lineas = explode("\n", $ingredientesText);
-            $sqlDetalle = "INSERT INTO detalle_receta (id_receta, nombre_ingrediente, cantidad, unidad) VALUES (?, ?, ?, ?)";
-            $stmtDetalle = $pdo->prepare($sqlDetalle);
-
-            foreach ($lineas as $linea) {
-                $linea = trim($linea);
-                if (!empty($linea)) {
-                    // Valor por defecto: 1 unidad para ingresos manuales
-                    $stmtDetalle->execute([$idFinal, $linea, 1, 'unidad']);
-                }
-            }
-        }
-
-        $pdo->commit();
-
-        $_SESSION['mensaje'] = "Receta guardada correctamente.";
-        // Redirigimos al detalle de la receta recién guardada/editada
-        header("Location: ../views/user/detalle_receta.php?id=" . $idFinal);
-        exit;
-
-    } catch (Exception $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        error_log("Error en guardar_receta: " . $e->getMessage());
-        die("Error crítico al procesar la receta: " . $e->getMessage());
+    if ($idReceta) {
+        // 4. EDICIÓN
+        $pdo->prepare("UPDATE receta SET titulo = ?, tipo_comida = ?, calorias_por_racion = ?, proteinas_g_por_racion = ?,
+                           carbohidratos_g_por_racion = ?, grasas_g_por_racion = ?, descripcion = ?
+                       WHERE id_receta = ? AND id_usuario_creador = ?")
+            ->execute([$titulo, $tipoComida, $calorias, $proteinas, $carbohidratos, $grasas, $instrucciones, $idReceta, $userId]);
+        $pdo->prepare("DELETE FROM detalle_receta WHERE id_receta = ?")->execute([$idReceta]);
+        $idFinal = $idReceta;
+    } else {
+        // 5. CREACIÓN
+        $pdo->prepare("INSERT INTO receta (titulo, tipo_comida, calorias_por_racion, proteinas_g_por_racion,
+                           carbohidratos_g_por_racion, grasas_g_por_racion, descripcion, id_usuario_creador, generado_ia)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)")
+            ->execute([$titulo, $tipoComida, $calorias, $proteinas, $carbohidratos, $grasas, $instrucciones, $userId]);
+        $idFinal = (int) $pdo->lastInsertId();
     }
+
+    // 6. INGREDIENTES, con su cantidad y unidad (antes se guardaban todos como "1 unidad")
+    $stmtDetalle = $pdo->prepare("INSERT INTO detalle_receta (id_receta, nombre_ingrediente, cantidad, unidad) VALUES (?, ?, ?, ?)");
+    foreach ($ingredientes as $ing) {
+        $stmtDetalle->execute([$idFinal, $ing['nombre'], $ing['cantidad'], $ing['unidad']]);
+    }
+
+    $pdo->commit();
+
+    $_SESSION['mensaje'] = "Receta guardada correctamente.";
+    header("Location: ../views/user/detalle_receta.php?id=" . $idFinal);
+    exit;
+
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log("Error en guardar_receta: " . $e->getMessage());
+    $_SESSION['errores_form'] = ["No se pudo guardar la receta. Inténtalo de nuevo."];
+    $_SESSION['post_data'] = $_POST;
+    header("Location: ../views/user/" . ($idReceta ? "editar_receta.php?id=$idReceta" : "crear_receta.php"));
+    exit;
 }

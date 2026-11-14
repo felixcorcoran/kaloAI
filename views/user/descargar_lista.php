@@ -8,6 +8,7 @@
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/recetas.php';
 
 // Carga de Dompdf vía Composer (Asegúrate de haber ejecutado 'composer require dompdf/dompdf')
 require_once __DIR__ . '/../../vendor/autoload.php'; 
@@ -16,7 +17,8 @@ use Dompdf\Dompdf;
 use Dompdf\Options;
 
 if (!isset($_SESSION['user_id'])) {
-    die("Error: No has iniciado sesión.");
+    header("Location: ../auth/login.php");
+    exit;
 }
 
 $userId = $_SESSION['user_id'];
@@ -37,59 +39,11 @@ $stmtNec = $pdo->prepare($sqlNecesario);
 $stmtNec->execute([$userId]);
 $necesariosRaw = $stmtNec->fetchAll();
 
-$necesariosProcesados = [];
-
-// B. Normalización y Unificación (Evita duplicados por tildes o mayúsculas)
-foreach ($necesariosRaw as $nec) {
-    $nombreNorm = mb_strtolower(trim($nec['nombre_ingrediente']), 'UTF-8');
-    $nombreNorm = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $nombreNorm);
-    
-    // Limpieza de palabras que ensucian la comparación
-    $palabras_sobrantes = ['cocido', 'en seco', 'integrales', 'blanco', 'frescas'];
-    $nombreNorm = str_replace($palabras_sobrantes, '', $nombreNorm);
-    $nombreNorm = trim($nombreNorm);
-
-    $unidad = $nec['unidad'];
-    $cantidadTotal = $nec['cantidad'] * $nec['raciones'];
-    $key = $nombreNorm . "_" . $unidad;
-
-    if (!isset($necesariosProcesados[$key])) {
-        $necesariosProcesados[$key] = [
-            'nombre' => ucfirst($nombreNorm),
-            'cantidad' => 0,
-            'unidad' => $unidad
-        ];
-    }
-    $necesariosProcesados[$key]['cantidad'] += $cantidadTotal;
-}
-
-// C. Obtener Inventario actual del usuario para restar
+// Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
+// sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.
 $stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
 $stmtInv->execute([$userId]);
-$inventarioRaw = $stmtInv->fetchAll();
-
-$inventarioProcesado = [];
-foreach ($inventarioRaw as $inv) {
-    $nInv = mb_strtolower(trim($inv['nombre_ingrediente']), 'UTF-8');
-    $nInv = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $nInv);
-    $uInv = $inv['unidad'];
-    $inventarioProcesado[$nInv . "_" . $uInv] = $inv['cantidad'];
-}
-
-// D. Cruce de datos: ¿Qué falta realmente?
-$listaCompra = [];
-foreach ($necesariosProcesados as $key => $data) {
-    $tengo = $inventarioProcesado[$key] ?? 0;
-    $falta = $data['cantidad'] - $tengo;
-
-    if ($falta > 0) {
-        $listaCompra[] = [
-            'nombre' => $data['nombre'],
-            'comprar' => $falta,
-            'unidad' => $data['unidad']
-        ];
-    }
-}
+$listaCompra = calcularListaCompra($necesariosRaw, $stmtInv->fetchAll());
 
 /* ==========================================================================
    2. CONSTRUCCIÓN DEL HTML PARA EL PDF
@@ -123,7 +77,7 @@ foreach ($listaCompra as $item) {
     <div class="item">
         <span class="cb"></span>
         <span class="name">' . htmlspecialchars($item['nombre']) . '</span>
-        <span class="qty">' . (float)round($item['comprar'], 2) . ' ' . $item['unidad'] . '</span>
+        <span class="qty">' . (float)round($item['comprar'], 2) . ' ' . e($item['unidad']) . '</span>
     </div>';
 }
 

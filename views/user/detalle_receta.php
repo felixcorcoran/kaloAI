@@ -7,11 +7,12 @@
 
 $pageTitle = "KaloAI | Detalle de Receta";
 session_start();
-require_once __DIR__ . '/../../core/utilidades.php';
 require_once __DIR__ . '/../../core/configuracion.php';
+require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/recetas.php';
 
 // Control de acceso: Solo usuarios registrados
-if (!isset($_SESSION['user_id'])) { redirect('auth/login.php'); }
+if (!isset($_SESSION['user_id'])) { redirect('../auth/login.php'); }
 
 $pdo = connectDB();
 $recetaId = $_GET['id'] ?? null;
@@ -22,8 +23,10 @@ $receta = null;
    ========================================================================== */
 if ($recetaId) {
     try {
-        $stmt = $pdo->prepare("SELECT * FROM receta WHERE id_receta = ?");
-        $stmt->execute([$recetaId]);
+        // Solo las recetas propias: antes cualquiera podía ver las de otra
+        // persona cambiando el número de la URL
+        $stmt = $pdo->prepare("SELECT * FROM receta WHERE id_receta = ? AND id_usuario_creador = ?");
+        $stmt->execute([$recetaId, $_SESSION['user_id']]);
         $receta = $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (\PDOException $e) {
         error_log("Error al cargar detalle de receta: " . $e->getMessage());
@@ -97,7 +100,8 @@ include_once __DIR__ . '/../templates/header.php';
                     </h3>
                     <ul class="space-y-6">
                         <?php 
-                        $pasos = explode('.', $receta['descripcion']); 
+                        // Un paso por línea (o por frase en las recetas antiguas), sin cortar "1.5 g"
+                        $pasos = dividirPasos($receta['descripcion']);
                         $count = 1;
                         foreach ($pasos as $paso): 
                             $pasoLimpio = trim($paso);
@@ -107,7 +111,7 @@ include_once __DIR__ . '/../templates/header.php';
                                         <?php echo $count++; ?>
                                     </span>
                                     <p class="text-gray-700 text-md leading-relaxed">
-                                        <?php echo htmlspecialchars($pasoLimpio); ?>.
+                                        <?php echo e($pasoLimpio); ?>
                                     </p>
                                 </li>
                             <?php endif; 
@@ -173,12 +177,12 @@ include_once __DIR__ . '/../templates/header.php';
                     <!-- CONTROL DE PERMISOS: Solo el creador puede editar o eliminar -->
                     <?php if ($receta['id_usuario_creador'] == $_SESSION['user_id']): ?>
                     <div class="flex gap-4 mb-12">
-                        <a href="editar_receta.php?id=<?= $receta['id_receta'] ?>" 
+                        <a href="editar_receta.php?id=<?= (int) $receta['id_receta'] ?>" 
                         class="flex-1 bg-teal-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-teal-100 hover:bg-teal-700 hover:-translate-y-1 transition-all uppercase text-xs tracking-widest text-center">
                             Editar Receta
                         </a>
                         
-                        <button onclick="abrirModalEliminar(<?= $receta['id_receta'] ?>)" 
+                        <button onclick="abrirModalEliminar(<?= (int) $receta['id_receta'] ?>)" 
                                 class="px-8 bg-white border border-red-100 text-red-500 font-black py-4 rounded-2xl hover:bg-red-50 transition-all uppercase text-xs tracking-widest">
                             Eliminar
                         </button>
