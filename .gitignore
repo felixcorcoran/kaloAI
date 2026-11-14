@@ -16,3 +16,6 @@ error_log
 .idea/
 # Tests
 .phpunit.cache/
+
+# Node (solo para compilar el CSS)
+node_modules/

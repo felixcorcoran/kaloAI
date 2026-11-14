@@ -33,6 +33,18 @@ jobs:
       - name: Instalar dependencias
         run: composer install --no-interaction --prefer-dist
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      # El hosting no tiene Node: public/css/tailwind.css se sube ya compilado.
+      # Si una vista usa una clase nueva y no se ha recompilado, esto falla.
+      - name: Comprobar que el CSS de Tailwind está compilado y al día
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:css
+          git diff --exit-code public/css/tailwind.css || { echo "Ejecuta 'npm run build:css' y sube public/css/tailwind.css"; exit 1; }
+
       - name: Comprobar la sintaxis de todos los PHP
         run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l > /dev/null
 

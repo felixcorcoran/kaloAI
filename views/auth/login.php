@@ -79,8 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - KaloAI</title>
     <?php include __DIR__ . '/../templates/tema.php'; ?>
-    <!-- USO DE TAILWIND -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- TAILWIND COMPILADO (npm run build:css) -->
+    <link rel="stylesheet" href="<?= BASE_URL ?>public/css/tailwind.css?v=<?= @filemtime(__DIR__ . '/../../public/css/tailwind.css') ?>">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body class="bg-gray-50 flex items-center justify-center min-h-screen p-6">

@@ -73,24 +73,12 @@ $inicial = function_exists('mb_substr')
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 
-    <!-- RECURSOS EXTERNOS: Frameworks de UI y estilos personalizados -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        // Solo tipografía: Inter como fuente base y Plus Jakarta Sans como
-        // fuente de titulares (clase font-display)
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
-                        display: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-                    },
-                },
-            },
-        };
-    </script>
+    <!-- RECURSOS EXTERNOS Y ESTILOS -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="<?= BASE_URL ?>public/css/style.css">
+    <!-- TAILWIND COMPILADO (npm run build:css). Va después de style.css, en el mismo
+         orden en que el CDN inyectaba sus estilos; las fuentes están en tailwind.config.js -->
+    <link rel="stylesheet" href="<?= BASE_URL ?>public/css/tailwind.css?v=<?= @filemtime(__DIR__ . '/../../public/css/tailwind.css') ?>">
 </head>
 <body class="bg-gray-50 antialiased">
     <!-- MODO OSCURO: después de los estilos de Tailwind para poder sobrescribirlos -->

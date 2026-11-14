@@ -22,7 +22,7 @@ Plataforma de nutrición con recetas generadas por IA según las calorías, los 
 
 - **PHP 8 sin framework**, con la lógica en `core/` y las vistas en `views/` (por rol: `user`, `nutri`, `admin`, `auth`).
 - **MySQL con PDO** y sentencias preparadas reales; contraseñas con `password_hash` / `password_verify`.
-- **Tailwind CSS** (CDN) y JavaScript sin dependencias para la interfaz.
+- **Tailwind CSS** compilado (`public/css/tailwind.css`, solo con las clases que se usan) y JavaScript sin dependencias para la interfaz.
 - **Modo oscuro** en `public/css/oscuro.css`: da su versión oscura a las clases de Tailwind que usa la web, sin repetir variantes en cada vista.
 - **Seguridad:** token CSRF en todo POST (comprobado en un único punto, `core/seguridad.php`), acciones que cambian datos solo por POST, texto escapado al mostrarlo (`e()` y `json_html()`), cada consulta filtrada por el usuario dueño de los datos y la clave de Gemini en cabecera con TLS verificado.
 - **Tests:** PHPUnit con tests unitarios y de integración contra MariaDB, ejecutados en GitHub Actions en cada push.
@@ -53,6 +53,15 @@ Abre <http://localhost:8080>. La clave es opcional: sin ella funciona todo menos
    `mysql -u root -p kaloai_db < database/schema.sql` y después `database/datos_demo.sql`.
 3. Copia `core/configuracion-example.php` como `core/configuracion.php`. Lee la base de datos y la clave de Gemini de variables de entorno (`DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`, `GEMINI_API_KEY`), o puedes escribirlas en el propio archivo, que no se sube al repositorio.
 4. Arranca un servidor PHP en la carpeta del proyecto: `php -S localhost:8000`. La URL base se ajusta sola en local, también si el proyecto está en una subcarpeta de XAMPP.
+
+### Estilos
+
+Tailwind se compila a `public/css/tailwind.css`, que se sube al repositorio para que el hosting no necesite Node. Si cambias clases en una vista, recompílalo (la CI avisa si se te olvida):
+
+```bash
+npm install
+npm run build:css     # o npm run watch:css mientras desarrollas
+```
 
 ### Cuentas de prueba
 
