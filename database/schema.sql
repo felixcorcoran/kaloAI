@@ -11,7 +11,7 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
-DROP TABLE IF EXISTS comida_planificada, detalle_receta, ingrediente_prohibido, inventario,
+DROP TABLE IF EXISTS migraciones, comida_planificada, detalle_receta, ingrediente_prohibido, inventario,
     logs_actividad, perfil, plan_semanal, progreso, receta, rol, solicitudes_vinculacion, usuario;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -166,3 +166,15 @@ CREATE TABLE solicitudes_vinculacion (
   CONSTRAINT solicitudes_vinculacion_ibfk_1 FOREIGN KEY (id_nutricionista) REFERENCES usuario (id_usuario) ON DELETE CASCADE,
   CONSTRAINT solicitudes_vinculacion_ibfk_2 FOREIGN KEY (id_paciente) REFERENCES usuario (id_usuario) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Registro de migraciones (core/migraciones.php). Este esquema ya incluye los
+-- cambios de las que se listan aquí, así que se apuntan como aplicadas.
+CREATE TABLE migraciones (
+  nombre VARCHAR(190) NOT NULL,
+  aplicada_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO migraciones (nombre) VALUES
+  ('001_perfil_y_solicitudes.sql'),
+  ('002_texto_sin_escapar.sql');

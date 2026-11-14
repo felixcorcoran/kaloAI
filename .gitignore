@@ -19,3 +19,6 @@ error_log
 
 # Node (solo para compilar el CSS)
 node_modules/
+
+# Marca local de migraciones aplicadas (core/migraciones.php)
+core/.migraciones_aplicadas

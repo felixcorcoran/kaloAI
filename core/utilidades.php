@@ -8,6 +8,15 @@ require_once __DIR__ . '/seguridad.php';
 exigirCsrfEnPost();
 
 /**
+ * Migraciones de la base de datos: tras un despliegue, la primera visita
+ * aplica las que falten (core/migraciones.php). Si no hay nada nuevo, solo
+ * lee un archivo pequeño.
+ */
+require_once __DIR__ . '/configuracion.php';
+require_once __DIR__ . '/migraciones.php';
+comprobarMigraciones();
+
+/**
  * GESTIÓN DE SEGURIDAD (Contraseñas)
  * Implemento funciones para el manejo seguro de credenciales mediante hashing.
  */

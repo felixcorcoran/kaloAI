@@ -165,4 +165,17 @@ final class BaseDatosTest extends TestCase
         self::$pdo->exec(file_get_contents(__DIR__ . '/../../database/migraciones/002_texto_sin_escapar.sql'));
         $this->assertSame("Lucía O'Brien & Co <3", $this->valor("SELECT nombre FROM perfil WHERE id_usuario = 4"));
     }
+
+    public function testLasMigracionesSeAplicanUnaSolaVez(): void
+    {
+        // La base de datos de schema.sql ya las tiene apuntadas: no hay nada que hacer
+        $this->assertSame([], aplicarMigracionesPendientes(self::$pdo));
+
+        // Sin el registro (como en producción antes del primer despliegue) se
+        // aplican todas, sobre un esquema que ya tiene sus cambios, sin romper nada
+        self::$pdo->exec("DROP TABLE migraciones");
+        $this->assertSame(migracionesDisponibles(), aplicarMigracionesPendientes(self::$pdo));
+        $this->assertSame([], aplicarMigracionesPendientes(self::$pdo));
+        $this->assertSame(3, (int) $this->valor("SELECT COUNT(*) FROM rol"));
+    }
 }

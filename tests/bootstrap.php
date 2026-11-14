@@ -20,6 +20,6 @@ if (!file_exists($configuracion)) {
 }
 
 require_once __DIR__ . '/../core/configuracion.php';
-require_once __DIR__ . '/../core/utilidades.php';
+require_once __DIR__ . '/../core/utilidades.php'; // incluye core/migraciones.php
 require_once __DIR__ . '/../core/recetas.php';
 require_once __DIR__ . '/../core/generar_recetas_ia.php';
