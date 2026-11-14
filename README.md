@@ -83,9 +83,22 @@ KALOAI_TEST_DB_NAME=kaloai_test DB_USER=root DB_PASS=... vendor/bin/phpunit
 
 Los de integración borran y vuelven a crear las tablas de la base de datos indicada, así que su nombre tiene que terminar en `_test`.
 
-### Base de datos de producción
+## Despliegue
 
-Si ya tienes la base de datos creada con una versión anterior, ejecuta una vez, en orden, los archivos de `database/migraciones/` (por ejemplo, desde la pestaña SQL de phpMyAdmin).
+Automático: al fusionar en `main`, GitHub Actions pasa los tests y, si van bien, sube a InfinityFree por FTP solo lo que ha cambiado (`.github/workflows/tests.yml`). Tu `core/configuracion.php` del servidor nunca se sobrescribe.
+
+**Base de datos:** no hay que hacer nada a mano. Las migraciones de `database/migraciones/` las aplica la propia web en la primera visita tras el despliegue (InfinityFree no deja conectarse a MySQL desde fuera). Cada una se aplica una sola vez y queda apuntada en la tabla `migraciones`; si una falla, se registra en el log de errores y la web sigue funcionando.
+
+**Configuración inicial (una sola vez)**, en GitHub → *Settings* → *Secrets and variables* → *Actions*:
+
+| Secreto | Valor |
+| --- | --- |
+| `FTP_USERNAME` | el usuario FTP de tu cuenta de InfinityFree (empieza por `if0_`) |
+| `FTP_PASSWORD` | la contraseña de esa cuenta (la del panel del hosting, no la del área de cliente) |
+
+Opcionales, en la pestaña *Variables*: `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
+
+**Para escribir una migración nueva:** crea `database/migraciones/003_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
 
 ---
 
