@@ -264,6 +264,13 @@ include_once __DIR__ . '/../templates/header.php';
     <?php endif; ?>
 </div>
 
+<div class="k-container -mt-4 pb-10">
+    <div class="k-alert k-alert-warn">
+        <?= icono('lightbulb') ?>
+        <p><strong>Consejo:</strong> mantén la despensa al día y la lista de la compra solo te mostrará lo que de verdad te falta. Al marcar algo como comprado, se suma aquí solo.</p>
+    </div>
+</div>
+
 <!-- MODAL: AÑADIR / EDITAR INGREDIENTE -->
 <div id="itemModal" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="k-modal-backdrop"></div>

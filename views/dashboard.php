@@ -325,6 +325,29 @@ $cambioPeso = ($pesoActual !== null && $pesoInicial !== null) ? round($pesoActua
     </section>
 </div>
 
+<?php
+// Accesos directos a cada sección, con su color
+$accesos = [
+    ['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus menús de los 7 días', 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300'],
+    ['user/mis_recetas.php', 'book', 'Mis recetas', 'Las que generaste y las tuyas', 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300'],
+    ['user/lista_compra.php', 'cart', 'Lista de la compra', 'Lo que te falta para la semana', 'bg-teal-50 text-teal-700'],
+    ['user/inventario.php', 'package', 'Despensa', 'Lo que ya tienes en casa', 'bg-amber-50 text-amber-700'],
+];
+?>
+<div class="k-container -mt-4 pb-10">
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <?php foreach ($accesos as [$url, $ic, $titulo, $texto, $color]): ?>
+            <a href="<?= $url ?>" class="k-card k-card-link group flex items-center gap-4 p-5">
+                <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl <?= $color ?> transition-transform group-hover:scale-110"><?= icono($ic) ?></span>
+                <span class="min-w-0">
+                    <span class="block font-semibold k-strong"><?= $titulo ?></span>
+                    <span class="block truncate text-sm k-muted"><?= $texto ?></span>
+                </span>
+            </a>
+        <?php endforeach; ?>
+    </div>
+</div>
+
 <script>
     // Datos para el gráfico de peso (main.js)
     window.dashboardData = { progreso: <?= $jsProgresoData ?> };

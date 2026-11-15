@@ -58,24 +58,45 @@ $seccionesUsuario = [
     ['Progreso', 'trend-up', 'views/user/progreso.php',              ['progreso.php']],
     ['Perfil',   'user',     'views/user/perfil.php',                ['perfil.php']],
 ];
-$secciones = match ($rol) {
+// Paneles de trabajo de administración y nutricionista
+$seccionesEquipo = match ($rol) {
     1 => [
         ['Usuarios',  'shield', 'views/admin/dashboard_admin.php', ['dashboard_admin.php']],
         ['Pacientes', 'users',  'views/nutri/dashboard_nutri.php', ['dashboard_nutri.php']],
-        ['Mi plan',   'home',   'views/dashboard.php',             ['dashboard.php']],
     ],
     2 => [
         ['Pacientes', 'users', 'views/nutri/dashboard_nutri.php', ['dashboard_nutri.php']],
-        ['Mi plan',   'home',  'views/dashboard.php',             ['dashboard.php']],
     ],
-    default => $seccionesUsuario,
+    default => [],
 };
+$enPanelEquipo = in_array($paginaActual, ['dashboard_admin.php', 'dashboard_nutri.php'], true);
 
-$pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaActual) {
-    foreach ($secciones as [$texto, $icono, $ruta, $paginas]) {
+// Usuario: sus secciones. Admin y nutricionista: en sus paneles, sus paneles y
+// "Mi plan"; dentro de su propio plan, todas las secciones del usuario y sus
+// paneles como iconos (sin "Perfil", que está en el menú de la cuenta).
+if (!$seccionesEquipo) {
+    $secciones = $seccionesUsuario;
+} elseif ($enPanelEquipo) {
+    $secciones = array_merge($seccionesEquipo, [['Mi plan', 'home', 'views/dashboard.php', ['dashboard.php']]]);
+} else {
+    $secciones = array_merge(
+        array_map(fn($s) => $s + [4 => 'solo-icono'], $seccionesEquipo),
+        array_slice($seccionesUsuario, 0, 6)
+    );
+}
+
+$pintarNavegacion = function () use ($secciones, $paginaActual) {
+    foreach ($secciones as $i => $seccion) {
+        [$texto, $icono, $ruta, $paginas] = $seccion;
+        $soloIcono = ($seccion[4] ?? '') === 'solo-icono';
         $activa = in_array($paginaActual, $paginas, true);
-        echo '<a href="' . e(BASE_URL . $ruta) . '" class="k-nav-link ' . $claseExtra . '"' . ($activa ? ' aria-current="page"' : '') . '>'
-            . icono($icono) . '<span>' . e($texto) . '</span></a>';
+        echo '<a href="' . e(BASE_URL . $ruta) . '" class="k-nav-link"' . ($activa ? ' aria-current="page"' : '')
+            . ($soloIcono ? ' title="' . e($texto) . '" aria-label="' . e($texto) . '"' : '') . '>'
+            . icono($icono) . ($soloIcono ? '' : '<span>' . e($texto) . '</span>') . '</a>';
+        // Separador entre los paneles de trabajo y las secciones del plan
+        if ($soloIcono && empty($secciones[$i + 1][4])) {
+            echo '<span class="mx-1 h-5 w-px shrink-0 self-center" style="background-color: var(--k-border-strong);" aria-hidden="true"></span>';
+        }
     }
 };
 ?>
@@ -140,7 +161,7 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
                     <img src="<?= BASE_URL ?>images/logo.png" class="h-8 w-auto" alt="KaloAI">
                 </a>
 
-                <nav class="hidden flex-1 items-center gap-1 lg:flex" aria-label="Secciones">
+                <nav class="hidden flex-1 items-center gap-1 xl:flex" aria-label="Secciones">
                     <?php $pintarNavegacion(); ?>
                 </nav>
 
@@ -158,9 +179,7 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
                         </summary>
                         <div class="k-card absolute right-0 mt-2 w-56 p-1.5" style="box-shadow: var(--k-shadow-lg);">
                             <p class="truncate px-3 pb-2 pt-1.5 text-xs k-muted"><?= e($userName) ?></p>
-                            <?php if ($rol === 3): ?>
-                                <a href="<?= BASE_URL ?>views/user/perfil.php" class="k-nav-link w-full"><?= icono('user') ?>Mi perfil</a>
-                            <?php endif; ?>
+                            <a href="<?= BASE_URL ?>views/user/perfil.php" class="k-nav-link w-full"><?= icono('user') ?>Mi perfil</a>
                             <a href="<?= BASE_URL ?>index.php" class="k-nav-link w-full"><?= icono('home') ?>Ir a la portada</a>
                             <div class="k-divider my-1"></div>
                             <a href="<?= BASE_URL ?>views/auth/logout.php" class="k-nav-link w-full hover:!text-red-600"><?= icono('log-out') ?>Cerrar sesión</a>
@@ -170,7 +189,7 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
             </div>
 
             <!-- Navegación en móvil y tableta: fila deslizable -->
-            <nav class="-mt-px overflow-x-auto border-t lg:hidden" style="border-color: var(--k-border);" aria-label="Secciones">
+            <nav class="-mt-px overflow-x-auto border-t xl:hidden" style="border-color: var(--k-border);" aria-label="Secciones">
                 <div class="k-container flex w-max min-w-full gap-1 py-2">
                     <?php $pintarNavegacion(); ?>
                 </div>
