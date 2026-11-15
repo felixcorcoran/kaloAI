@@ -44,6 +44,27 @@ $usuarios = $pdo->query("
 
 $logs = $pdo->query("SELECT * FROM logs_actividad ORDER BY fecha DESC LIMIT 10")->fetchAll();
 
+// Uso de la aplicación
+$uso = $pdo->query("SELECT
+    (SELECT COUNT(*) FROM receta) AS recetas,
+    (SELECT COUNT(*) FROM receta WHERE generado_ia = 1) AS recetas_ia,
+    (SELECT COUNT(*) FROM comida_planificada) AS comidas,
+    (SELECT COUNT(*) FROM progreso) AS registros,
+    (SELECT COUNT(*) FROM inventario) AS despensa")->fetch();
+
+// Altas de los últimos 6 meses (incluido el actual)
+$altas = [];
+$mesesCortos = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+for ($i = 5; $i >= 0; $i--) {
+    $marca = strtotime("first day of -$i month");
+    $altas[date('Y-m', $marca)] = ['etiqueta' => $mesesCortos[date('n', $marca) - 1], 'total' => 0];
+}
+$stmtAltas = $pdo->query("SELECT DATE_FORMAT(fecha_creacion, '%Y-%m') AS mes, COUNT(*) AS total FROM usuario
+                          WHERE fecha_creacion >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH) GROUP BY mes");
+foreach ($stmtAltas->fetchAll() as $fila) {
+    if (isset($altas[$fila['mes']])) $altas[$fila['mes']]['total'] = (int) $fila['total'];
+}
+
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php'; 
 ?>
@@ -62,7 +83,8 @@ $avisos = [
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Usuarios</h1>
+            <span class="k-pill"><?= icono('shield') ?>Administración</span>
+            <h1 class="k-title mt-3">Usuarios</h1>
             <p class="k-subtitle">Roles, nutricionista asignado y acceso de cada cuenta. Cada cambio queda en la actividad.</p>
         </div>
     </div>
@@ -72,14 +94,40 @@ $avisos = [
     <?php endif; ?>
 
     <!-- CIFRAS -->
-    <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <?php foreach ([['Cuentas', $totalUsuarios, 'users'], ['Nutricionistas activos', $totalNutris, 'user-plus'],
-                        ['Pacientes con nutricionista', $conNutri, 'activity'], ['Bloqueadas', $bloqueados, 'lock']] as [$etiqueta, $valor, $ic]): ?>
-            <div class="k-card k-card-pad flex items-center gap-4">
-                <span class="k-icon-tile"><?= icono($ic) ?></span>
+    <div class="mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <?php foreach ([['Cuentas', $totalUsuarios, 'users', ''], ['Nutricionistas activos', $totalNutris, 'user-plus', 'k-tile-indigo'],
+                        ['Pacientes con nutricionista', $conNutri, 'activity', 'k-tile-blue'], ['Bloqueadas', $bloqueados, 'lock', 'k-tile-danger']] as [$etiqueta, $valor, $ic, $tinte]): ?>
+            <div class="k-card flex items-center gap-4 p-5">
+                <span class="hidden sm:grid k-icon-tile <?= $tinte ?>"><?= icono($ic) ?></span>
                 <div><p class="k-stat-label"><?= $etiqueta ?></p><p class="k-stat-value"><?= (int) $valor ?></p></div>
             </div>
         <?php endforeach; ?>
+    </div>
+
+    <!-- ALTAS Y USO -->
+    <div class="mb-6 grid gap-6 lg:grid-cols-3">
+        <section class="k-card k-card-pad flex flex-col lg:col-span-2">
+            <div class="flex items-start justify-between">
+                <div>
+                    <h2 class="k-section-title">Altas por mes</h2>
+                    <p class="mt-1 text-sm k-muted">Cuentas creadas en los últimos seis meses.</p>
+                </div>
+                <p class="text-right"><span class="k-stat-value"><?= array_sum(array_column($altas, 'total')) ?></span><span class="block text-xs k-muted">en total</span></p>
+            </div>
+            <div class="relative mt-4 min-h-[14rem] flex-1"><canvas id="altasChart" class="absolute inset-0" aria-label="Gráfico de altas por mes"></canvas></div>
+        </section>
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Uso de KaloAI</h2>
+            <?php $pctIa = $uso['recetas'] ? (int) round($uso['recetas_ia'] / $uso['recetas'] * 100) : 0; ?>
+            <div class="mt-4 flex items-baseline gap-2"><p class="k-stat-value"><?= (int) $uso['recetas'] ?></p><span class="text-sm k-muted">recetas guardadas</span></div>
+            <div class="k-track mt-3 h-2"><div class="k-bar" style="width: <?= $pctIa ?>%"></div></div>
+            <p class="mt-2 text-xs k-muted"><?= $pctIa ?>% creadas con IA (<?= (int) $uso['recetas_ia'] ?>)</p>
+            <dl class="mt-5 space-y-3 text-sm">
+                <div class="flex items-center justify-between"><dt class="flex items-center gap-2 k-muted"><?= icono('calendar', 'h-4 w-4') ?>Comidas planificadas</dt><dd class="font-medium tabular-nums k-strong"><?= (int) $uso['comidas'] ?></dd></div>
+                <div class="flex items-center justify-between"><dt class="flex items-center gap-2 k-muted"><?= icono('activity', 'h-4 w-4') ?>Registros de peso</dt><dd class="font-medium tabular-nums k-strong"><?= (int) $uso['registros'] ?></dd></div>
+                <div class="flex items-center justify-between"><dt class="flex items-center gap-2 k-muted"><?= icono('package', 'h-4 w-4') ?>Productos en despensas</dt><dd class="font-medium tabular-nums k-strong"><?= (int) $uso['despensa'] ?></dd></div>
+            </dl>
+        </section>
     </div>
 
     <!-- USUARIOS -->
@@ -185,5 +233,9 @@ $avisos = [
         </div>
     </div>
 </div>
+
+<script>
+    window.adminData = <?= json_html(['etiquetas' => array_column(array_values($altas), 'etiqueta'), 'altas' => array_column(array_values($altas), 'total')]) ?>;
+</script>
 
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

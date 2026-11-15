@@ -303,11 +303,15 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
 
 <div class="k-container k-page max-w-4xl">
     <div class="k-page-head">
-        <div>
-            <h1 class="k-title">Tu perfil</h1>
-            <p class="k-subtitle">Con estos datos KaloAI calcula tus calorías y macros diarios, y la IA evita lo que no puedes comer.</p>
+        <div class="flex items-center gap-4">
+            <span class="k-avatar h-14 w-14 text-xl" aria-hidden="true"><?= e($inicial) ?></span>
+            <div>
+            <span class="k-pill"><?= icono('user') ?><?= e($nombreRol) ?></span>
+            <h1 class="k-title mt-2">Tu perfil</h1>
+            </div>
         </div>
     </div>
+    <p class="k-subtitle -mt-2 mb-6">Con estos datos KaloAI calcula tus calorías y macros diarios, y la IA evita lo que no puedes comer.</p>
 
     <?php if ($message): ?>
         <div class="k-alert k-alert-<?= $messageType === 'success' ? (($profileData['tdee_calorias'] ?? 0) > 0 ? 'ok' : 'info') : 'error' ?> mb-6" role="alert">
@@ -324,6 +328,9 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
                     <p class="k-stat-label">Tu objetivo diario</p>
                     <p class="mt-1 font-display text-4xl font-bold tracking-tight tabular-nums k-strong"><?= number_format($netas, 0, ',', '.') ?><span class="k-stat-unit">kcal</span></p>
                     <p class="mt-1 text-xs k-muted">Mantenimiento (TDEE): <?= number_format((int) $profileData['tdee_calorias'], 0, ',', '.') ?> kcal</p>
+                    <?php $ajuste = $netas - (int) $profileData['tdee_calorias']; if ($ajuste !== 0): ?>
+                        <span class="k-delta mt-2 <?= $ajuste < 0 ? 'k-delta-ok' : 'k-delta-warn' ?>"><span class="k-delta-icon"><?= icono($ajuste < 0 ? 'trend-down' : 'trend-up') ?></span><?= ($ajuste > 0 ? '+' : '') . number_format($ajuste, 0, ',', '.') ?> kcal <?= $ajuste < 0 ? 'de déficit' : 'de superávit' ?></span>
+                    <?php endif; ?>
                 </div>
                 <div class="flex-1">
                     <div class="flex h-2.5 overflow-hidden rounded-full" style="background-color: var(--k-surface-2);">
@@ -332,10 +339,11 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
                         <?php endforeach; ?>
                     </div>
                     <div class="mt-4 grid grid-cols-3 gap-2">
-                        <?php foreach ($macrosPerfil as [$clase, $etiqueta, $gramos]): ?>
+                        <?php foreach ($macrosPerfil as [$clase, $etiqueta, $gramos, $kcalG]): ?>
                             <div class="k-macro-chip <?= $clase ?>">
                                 <p class="k-stat-label flex items-center gap-1.5"><span class="k-macro-dot h-2 w-2"></span><?= $etiqueta ?></p>
                                 <p class="font-display text-lg font-bold tabular-nums k-strong"><?= $gramos ?><span class="k-stat-unit">g</span></p>
+                                <p class="text-[11px] k-muted"><?= $netas ? round($gramos * $kcalG / $netas * 100) : 0 ?>% de las kcal</p>
                             </div>
                         <?php endforeach; ?>
                     </div>

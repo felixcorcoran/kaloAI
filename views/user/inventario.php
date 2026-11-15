@@ -203,6 +203,22 @@ try {
     $messageType = 'error';
 }
 
+// Qué ingredientes de la despensa usa el plan de esta semana
+require_once __DIR__ . '/../../core/recetas.php';
+$stmtPlan = $pdo->prepare("SELECT DISTINCT dr.nombre_ingrediente FROM comida_planificada cp
+                           JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
+                           JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
+                           WHERE ps.id_usuario = ?");
+$stmtPlan->execute([$userId]);
+$clavesPlan = array_flip(array_map(fn($n) => claveProducto((string) $n), $stmtPlan->fetchAll(PDO::FETCH_COLUMN)));
+$enPlan = fn(array $item) => isset($clavesPlan[claveProducto((string) $item['nombre_ingrediente'])]);
+$usadosEnPlan = count(array_filter($inventarioItems, $enPlan));
+$porTipo = ['peso' => 0, 'volumen' => 0, 'conteo' => 0];
+foreach ($inventarioItems as $it) {
+    $porTipo[in_array($it['unidad'], ['g', 'kg'], true) ? 'peso' : (in_array($it['unidad'], ['ml', 'L'], true) ? 'volumen' : 'conteo')]++;
+}
+$ultimaActualizacion = $inventarioItems ? max(array_column($inventarioItems, 'fecha_actualizacion')) : null;
+
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php'; 
 ?>
@@ -210,7 +226,8 @@ include_once __DIR__ . '/../templates/header.php';
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Despensa</h1>
+            <span class="k-pill"><?= icono('package') ?>Tu cocina</span>
+            <h1 class="k-title mt-3">Despensa</h1>
             <p class="k-subtitle">Lo que ya tienes en casa. La lista de la compra lo descuenta, y la IA lo usa al crear recetas.</p>
         </div>
         <button type="button" onclick="abrirModalInventario('add')" class="k-btn k-btn-primary"><?= icono('plus') ?>Añadir ingrediente</button>
@@ -222,6 +239,22 @@ include_once __DIR__ . '/../templates/header.php';
         </div>
     <?php endif; ?>
 
+    <!-- CIFRAS -->
+    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="k-icon-tile"><?= icono('package') ?></span>
+            <div><p class="k-stat-label">Ingredientes</p><p class="k-stat-value"><?= count($inventarioItems) ?></p></div>
+        </div>
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="k-icon-tile k-tile-indigo"><?= icono('calendar') ?></span>
+            <div><p class="k-stat-label">Los usa tu plan</p><p class="k-stat-value"><?= $usadosEnPlan ?><span class="k-stat-unit">de <?= count($inventarioItems) ?></span></p></div>
+        </div>
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="k-icon-tile k-tile-amber"><?= icono('clock') ?></span>
+            <div><p class="k-stat-label">Último cambio</p><p class="font-display text-lg font-semibold k-strong"><?= $ultimaActualizacion ? e(formatearFecha($ultimaActualizacion)) : '—' ?></p></div>
+        </div>
+    </div>
+
     <?php if (empty($inventarioItems)): ?>
         <div class="k-empty">
             <span class="k-empty-icon"><?= icono('package') ?></span>
@@ -230,45 +263,84 @@ include_once __DIR__ . '/../templates/header.php';
             <button type="button" onclick="abrirModalInventario('add')" class="k-btn k-btn-primary mt-5"><?= icono('plus') ?>Añadir el primero</button>
         </div>
     <?php else: ?>
-        <div class="k-card overflow-hidden">
-            <table class="k-table">
-                <thead>
-                    <tr>
-                        <th>Ingrediente</th>
-                        <th class="text-right">Cantidad</th>
-                        <th class="hidden sm:table-cell">Actualizado</th>
-                        <th class="w-24"><span class="sr-only">Acciones</span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($inventarioItems as $item):
-                        $cantidad = (float) $item['cantidad']; ?>
+        <div class="grid gap-6 lg:grid-cols-3">
+            <section class="k-card overflow-hidden lg:col-span-2">
+                <div class="k-card-head">
+                    <h2 class="k-section-title">Lo que tienes</h2>
+                    <label class="k-search sm:w-64">
+                        <?= icono('search') ?><span class="sr-only">Buscar ingrediente</span>
+                        <input type="search" id="buscadorDespensa" class="k-input h-9" placeholder="Buscar ingrediente">
+                    </label>
+                </div>
+                <table class="k-table">
+                    <thead>
                         <tr>
-                            <td class="font-medium k-strong"><?= e($item['nombre_ingrediente']) ?></td>
-                            <td class="text-right tabular-nums">
-                                <?= floor($cantidad) == $cantidad ? number_format($cantidad, 0, ',', '.') : number_format($cantidad, 2, ',', '.') ?>
-                                <span class="k-muted"><?= e($item['unidad'] === 'unidad' ? ($cantidad == 1 ? 'unidad' : 'unidades') : $item['unidad']) ?></span>
-                            </td>
-                            <td class="hidden text-sm k-muted sm:table-cell"><?= e(formatearFecha($item['fecha_actualizacion'])) ?></td>
-                            <td>
-                                <div class="flex justify-end gap-1">
-                                    <button type="button" onclick="abrirModalInventario('edit', <?= e(json_html($item)) ?>)" class="k-btn k-btn-ghost k-btn-icon" aria-label="Editar <?= e($item['nombre_ingrediente']) ?>"><?= icono('pencil') ?></button>
-                                    <button type="button" onclick="abrirModalEliminarInventario(<?= (int) $item['id_inventario'] ?>, <?= e(json_html($item['nombre_ingrediente'])) ?>)" class="k-btn k-btn-ghost k-btn-icon k-btn-danger-text" aria-label="Eliminar <?= e($item['nombre_ingrediente']) ?>"><?= icono('trash') ?></button>
-                                </div>
-                            </td>
+                            <th>Ingrediente</th>
+                            <th class="text-right">Cantidad</th>
+                            <th class="hidden sm:table-cell">Actualizado</th>
+                            <th class="w-24"><span class="sr-only">Acciones</span></th>
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($inventarioItems as $item):
+                            $cantidad = (float) $item['cantidad']; ?>
+                            <tr class="fila-despensa" data-buscar="<?= e(mb_strtolower($item['nombre_ingrediente'], 'UTF-8')) ?>">
+                                <td>
+                                    <div class="flex items-center gap-3">
+                                        <span class="k-icon-tile hidden h-9 w-9 text-sm font-semibold sm:grid" aria-hidden="true"><?= e(mb_strtoupper(mb_substr($item['nombre_ingrediente'], 0, 1))) ?></span>
+                                        <div class="min-w-0">
+                                            <p class="font-medium k-strong"><?= e($item['nombre_ingrediente']) ?></p>
+                                            <?php if ($enPlan($item)): ?><span class="k-badge k-badge-brand mt-1">En tu plan</span><?php endif; ?>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="text-right tabular-nums">
+                                    <?= floor($cantidad) == $cantidad ? number_format($cantidad, 0, ',', '.') : number_format($cantidad, 2, ',', '.') ?>
+                                    <span class="k-muted"><?= e($item['unidad'] === 'unidad' ? ($cantidad == 1 ? 'unidad' : 'unidades') : $item['unidad']) ?></span>
+                                </td>
+                                <td class="hidden text-sm k-muted sm:table-cell"><?= e(formatearFecha($item['fecha_actualizacion'])) ?></td>
+                                <td>
+                                    <div class="flex justify-end gap-1">
+                                        <button type="button" onclick="abrirModalInventario('edit', <?= e(json_html($item)) ?>)" class="k-btn k-btn-ghost k-btn-icon" aria-label="Editar <?= e($item['nombre_ingrediente']) ?>"><?= icono('pencil') ?></button>
+                                        <button type="button" onclick="abrirModalEliminarInventario(<?= (int) $item['id_inventario'] ?>, <?= e(json_html($item['nombre_ingrediente'])) ?>)" class="k-btn k-btn-ghost k-btn-icon k-btn-danger-text" aria-label="Eliminar <?= e($item['nombre_ingrediente']) ?>"><?= icono('trash') ?></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <p id="sinIngredientes" class="px-6 py-8 text-center text-sm k-muted" hidden>Ningún ingrediente coincide con la búsqueda.</p>
+            </section>
+
+            <aside class="space-y-6">
+                <section class="k-card k-card-pad">
+                    <h2 class="k-section-title">Por tipo</h2>
+                    <?php $totalItems = max(1, count($inventarioItems)); ?>
+                    <ul class="mt-4 space-y-4">
+                        <?php foreach ([['peso', 'Por peso', 'g / kg', 'k-macro-p'], ['volumen', 'Líquidos', 'ml / L', 'k-macro-c'], ['conteo', 'Por unidades', 'huevos, latas…', 'k-macro-f']] as [$clave, $texto, $pista, $clase]): ?>
+                            <li class="<?= $clase ?>">
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="flex items-center gap-2 k-strong"><span class="k-macro-dot"></span><?= $texto ?> <span class="text-xs k-muted"><?= $pista ?></span></span>
+                                    <span class="tabular-nums k-muted"><?= $porTipo[$clave] ?></span>
+                                </div>
+                                <div class="k-track mt-2 h-1.5"><div class="k-bar k-macro-bar" style="width: <?= round($porTipo[$clave] / $totalItems * 100) ?>%"></div></div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </section>
+                <section class="k-card k-card-pad">
+                    <div class="flex items-start gap-3">
+                        <span class="k-icon-tile k-tile-amber"><?= icono('lightbulb') ?></span>
+                        <div>
+                            <p class="font-medium k-strong">Mantenla al día</p>
+                            <p class="mt-1 text-sm k-muted">Así la lista de la compra solo te muestra lo que falta. Al marcar algo como comprado, se suma aquí solo.</p>
+                        </div>
+                    </div>
+                    <a href="generar_receta.php?modo=estricto" class="k-btn k-btn-accent mt-4 w-full"><?= icono('sparkles') ?>Cocinar con lo que tengo</a>
+                </section>
+            </aside>
         </div>
     <?php endif; ?>
-</div>
-
-<div class="k-container -mt-4 pb-10">
-    <div class="k-alert k-alert-warn">
-        <?= icono('lightbulb') ?>
-        <p><strong>Consejo:</strong> mantén la despensa al día y la lista de la compra solo te mostrará lo que de verdad te falta. Al marcar algo como comprado, se suma aquí solo.</p>
-    </div>
 </div>
 
 <!-- MODAL: AÑADIR / EDITAR INGREDIENTE -->

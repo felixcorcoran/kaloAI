@@ -143,6 +143,25 @@ include_once __DIR__ . '/../templates/header.php';
 <?php
 // Contexto: si se viene de un hueco del plan, la receta irá a ese día y momento
 $enPlan = $diaUrl && $momentoUrl;
+
+// Lo que la IA tendrá en cuenta: objetivo por comida, alergias y despensa
+$stmtCtx = $pdo->prepare("SELECT COALESCE(calorias_netas_objetivo, tdee_calorias) FROM perfil WHERE id_usuario = ?");
+$stmtCtx->execute([$userId]);
+$metaDiaria = (int) ($stmtCtx->fetchColumn() ?: 0);
+$stmtCtx = $pdo->prepare("SELECT nombre_ingrediente, nota FROM ingrediente_prohibido WHERE id_usuario = ? ORDER BY nombre_ingrediente");
+$stmtCtx->execute([$userId]);
+$prohibidosCtx = $stmtCtx->fetchAll();
+$stmtCtx = $pdo->prepare("SELECT COUNT(*) FROM inventario WHERE id_usuario = ?");
+$stmtCtx->execute([$userId]);
+$enDespensa = (int) $stmtCtx->fetchColumn();
+$momentoActivo = $enPlan ? $momentoUrl : $tipoBuscado;
+$objetivosMomento = [];
+foreach (['Desayuno', 'Almuerzo', 'Snack', 'Cena'] as $m) {
+    $objetivosMomento[$m] = $metaDiaria ? objetivoRacion($metaDiaria, $m) : null;
+}
+if ($enPlan && $metaDiaria) {
+    $objetivosMomento = [$momentoUrl => objetivoRacion($metaDiaria, $momentoUrl, (float) ($caloriasActuales ?? 0))];
+}
 ?>
 
 <div class="k-container k-page">
@@ -151,7 +170,8 @@ $enPlan = $diaUrl && $momentoUrl;
     </a>
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Generar receta con IA</h1>
+            <span class="k-pill"><?= icono('sparkles') ?><?= $enPlan ? e($momentoUrl . ' · ' . $diaUrl) : 'Chef IA' ?></span>
+            <h1 class="k-title mt-3">Generar receta con IA</h1>
             <p class="k-subtitle">
                 <?php if ($enPlan): ?>
                     Para el <strong class="k-strong"><?= e(mb_strtolower($momentoUrl, 'UTF-8')) ?></strong> del <strong class="k-strong"><?= e(mb_strtolower($diaUrl, 'UTF-8')) ?></strong>. Se ajusta a las calorías que te quedan ese día y respeta tus alergias.
@@ -196,7 +216,7 @@ $enPlan = $diaUrl && $momentoUrl;
             <fieldset>
                 <legend class="k-label">Ingredientes</legend>
                 <div class="space-y-2">
-                    <?php $modo = $_POST['modo_generacion'] ?? 'flexible'; ?>
+                    <?php $modo = $_POST['modo_generacion'] ?? ($_GET['modo'] ?? 'flexible'); ?>
                     <label class="block">
                         <input type="radio" name="modo_generacion" value="flexible" class="peer sr-only" <?= $modo !== 'estricto' ? 'checked' : '' ?>>
                         <span class="k-choice"><?= icono('cart', 'h-4 w-4 shrink-0') ?><span><span class="block k-strong">Lo que haga falta</span><span class="block text-xs font-normal k-muted">Prioriza tu despensa y añade lo necesario</span></span></span>
@@ -208,7 +228,7 @@ $enPlan = $diaUrl && $momentoUrl;
                 </div>
             </fieldset>
 
-            <button type="submit" name="generar" class="k-btn k-btn-primary k-btn-lg w-full"><?= icono('sparkles') ?><?= $receta ? 'Generar otra' : 'Generar receta' ?></button>
+            <button type="submit" name="generar" class="k-btn k-btn-accent k-btn-lg w-full"><?= icono('sparkles') ?><?= $receta ? 'Generar otra' : 'Generar receta' ?></button>
         </form>
 
         <div class="space-y-6 lg:col-span-3">
@@ -259,6 +279,47 @@ $enPlan = $diaUrl && $momentoUrl;
                     <p class="mt-1 max-w-sm text-sm k-muted">Elige las opciones y pulsa «Generar receta». Tarda unos segundos.</p>
                 </div>
             <?php endif; ?>
+
+            <!-- LO QUE LA IA TIENE EN CUENTA -->
+            <section class="k-card k-card-pad">
+                <h2 class="k-section-title">Lo que la IA tendrá en cuenta</h2>
+                <div class="mt-5 grid gap-6 md:grid-cols-2">
+                    <div>
+                        <p class="flex items-center gap-2 text-sm font-medium k-strong"><span class="k-icon-tile h-7 w-7 rounded-lg k-tile-orange"><?= icono('flame', 'h-3.5 w-3.5') ?></span><?= $enPlan ? 'Objetivo para esta comida' : 'Objetivo por comida' ?></p>
+                        <?php if (!$metaDiaria): ?>
+                            <p class="mt-3 text-sm k-muted">Completa tu <a href="perfil.php" class="k-link">perfil</a> para que ajuste las calorías.</p>
+                        <?php else: ?>
+                            <ul class="mt-3 space-y-1.5 text-sm">
+                                <?php foreach ($objetivosMomento as $m => $obj): $activo = mb_strtolower($m, 'UTF-8') === mb_strtolower((string) $momentoActivo, 'UTF-8'); ?>
+                                    <li class="flex items-center justify-between rounded-lg px-3 py-2 <?= $activo ? 'k-subtle' : '' ?>">
+                                        <span class="<?= $activo ? 'font-medium k-strong' : 'k-muted' ?>"><?= estiloTipoReceta($m)['emoji'] ?> <?= e($m) ?></span>
+                                        <span class="tabular-nums <?= $activo ? 'font-semibold k-strong' : 'k-muted' ?>"><?= $obj['kcal'] ?> kcal · <?= $obj['proteinas'] ?> g prot.</span>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                            <p class="mt-2 text-xs k-muted">Sobre tu objetivo de <?= number_format($metaDiaria, 0, ',', '.') ?> kcal al día<?= $enPlan ? ', descontando lo que ya tienes ese día' : '' ?>.</p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="space-y-5">
+                        <div>
+                            <p class="flex items-center gap-2 text-sm font-medium k-strong"><span class="k-icon-tile h-7 w-7 rounded-lg k-tile-danger"><?= icono('ban', 'h-3.5 w-3.5') ?></span>Nunca usará</p>
+                            <?php if ($prohibidosCtx): ?>
+                                <div class="mt-3 flex flex-wrap gap-1.5">
+                                    <?php foreach ($prohibidosCtx as $pr): ?>
+                                        <span class="k-badge <?= str_starts_with((string) $pr['nota'], 'Alergia') ? 'k-badge-danger' : 'k-badge-warn' ?>"><?= e(mb_convert_case($pr['nombre_ingrediente'], MB_CASE_TITLE, 'UTF-8')) ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <p class="mt-3 text-sm k-muted">No tienes alergias marcadas. <a href="perfil.php" class="k-link">Añadir</a></p>
+                            <?php endif; ?>
+                        </div>
+                        <div>
+                            <p class="flex items-center gap-2 text-sm font-medium k-strong"><span class="k-icon-tile h-7 w-7 rounded-lg"><?= icono('package', 'h-3.5 w-3.5') ?></span>Tu despensa</p>
+                            <p class="mt-3 text-sm k-muted"><?= $enDespensa ? $enDespensa . ' ' . ($enDespensa === 1 ? 'ingrediente' : 'ingredientes') . ' que intentará aprovechar.' : 'Vacía: puedes añadir lo que tienes en casa.' ?> <a href="inventario.php" class="k-link">Ver</a></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <?php if ($diaUrl): ?>
                 <!-- O USAR UNA RECETA YA GUARDADA -->

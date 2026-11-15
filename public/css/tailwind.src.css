@@ -141,6 +141,7 @@
     .k-card-link:hover { border-color: var(--k-border-strong); background-color: color-mix(in srgb, var(--k-surface) 92%, var(--k-text)); }
     .k-divider { @apply border-t; border-color: var(--k-border); }
     .k-subtle { background-color: var(--k-surface-2); }
+    .k-link { @apply font-medium underline-offset-4 hover:underline; color: var(--k-brand-text); }
 
     /* ---------- Botones (píldora) ---------- */
     .k-btn {
@@ -170,6 +171,8 @@
     .k-btn-icon { @apply h-9 w-9 p-0; }
     .k-btn-icon svg { @apply h-[18px] w-[18px]; }
     .k-btn-icon.k-btn-danger-text:hover { background-color: var(--k-danger-soft); color: var(--k-danger); }
+    .k-btn-danger-text:not(.k-btn-icon) { color: var(--k-danger); }
+    .k-btn-danger-text:not(.k-btn-icon):hover { background-color: var(--k-danger-soft); }
 
     /* ---------- Formularios ---------- */
     .k-label { @apply mb-1.5 block text-sm font-medium; color: var(--k-text); }

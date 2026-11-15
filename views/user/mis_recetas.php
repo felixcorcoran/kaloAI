@@ -48,18 +48,27 @@ $mensaje = $_SESSION['mensaje'] ?? null;
 $mensajeTipo = ($_SESSION['mensaje_tipo'] ?? 'success') === 'error' ? 'error' : 'ok';
 unset($_SESSION['mensaje'], $_SESSION['mensaje_tipo']);
 
+// Cuántas veces está cada receta en el plan, para el resumen y las tarjetas
+$stmtUso = $pdo->prepare("SELECT cp.id_receta, COUNT(*) AS veces FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? GROUP BY cp.id_receta");
+$stmtUso->execute([$userId]);
+$usoEnPlan = array_column($stmtUso->fetchAll(PDO::FETCH_ASSOC), 'veces', 'id_receta');
+$recetasIa = count(array_filter($recetas, fn($r) => !empty($r['generado_ia'])));
+$mediaKcalRecetas = $recetas ? array_sum(array_column($recetas, 'calorias_por_racion')) / count($recetas) : 0;
+$enPlanDistintas = count(array_intersect(array_column($recetas, 'id_receta'), array_keys($usoEnPlan)));
+
 include_once __DIR__ . '/../templates/header.php';
 ?>
 
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Mis recetas</h1>
+            <span class="k-pill"><?= icono('book') ?>Tu biblioteca</span>
+            <h1 class="k-title mt-3">Mis recetas</h1>
             <p class="k-subtitle"><?= count($recetas) === 1 ? '1 receta guardada' : count($recetas) . ' recetas guardadas' ?>. Úsalas para llenar tu plan semanal.</p>
         </div>
         <div class="flex gap-2">
             <a href="crear_receta.php" class="k-btn k-btn-secondary"><?= icono('pencil') ?>Escribir receta</a>
-            <a href="generar_receta.php" class="k-btn k-btn-primary"><?= icono('sparkles') ?>Generar con IA</a>
+            <a href="generar_receta.php" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Generar con IA</a>
         </div>
     </div>
 
@@ -72,9 +81,22 @@ include_once __DIR__ . '/../templates/header.php';
             <span class="k-empty-icon"><?= icono('book') ?></span>
             <p class="font-medium k-strong">Todavía no tienes recetas</p>
             <p class="mt-1 text-sm k-muted">Genera una con IA a partir de tu despensa y tus objetivos, o escribe la tuya.</p>
-            <a href="generar_receta.php" class="k-btn k-btn-primary mt-5"><?= icono('sparkles') ?>Generar mi primera receta</a>
+            <a href="generar_receta.php" class="k-btn k-btn-accent mt-5"><?= icono('sparkles') ?>Generar mi primera receta</a>
         </div>
     <?php else: ?>
+        <!-- RESUMEN -->
+        <div class="mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+            <?php foreach ([['Recetas', count($recetas), '', 'book', ''],
+                            ['Creadas con IA', $recetasIa, 'de ' . count($recetas), 'sparkles', 'k-tile-indigo'],
+                            ['Media por ración', number_format($mediaKcalRecetas, 0, ',', '.'), 'kcal', 'flame', 'k-tile-orange'],
+                            ['En tu plan', $enPlanDistintas, 'de ' . count($recetas), 'calendar', 'k-tile-blue']] as [$etiqueta, $valor, $unidad, $ic, $tinte]): ?>
+                <div class="k-card flex items-center gap-4 p-5">
+                    <span class="hidden sm:grid k-icon-tile <?= $tinte ?>"><?= icono($ic) ?></span>
+                    <div><p class="k-stat-label"><?= $etiqueta ?></p><p class="k-stat-value"><?= $valor ?><?php if ($unidad): ?><span class="k-stat-unit"><?= $unidad ?></span><?php endif; ?></p></div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+
         <!-- BUSCADOR Y FILTROS -->
         <div class="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <label class="k-search md:w-80">
@@ -100,6 +122,9 @@ include_once __DIR__ . '/../templates/header.php';
                         <span class="transition-transform duration-300 group-hover:scale-110"><?= $estilo['emoji'] ?></span>
                         <?php if (!empty($receta['generado_ia'])): ?>
                             <span class="k-badge absolute right-3 top-3 text-[11px]" style="background-color: var(--k-surface);"><?= icono('sparkles', 'h-3 w-3') ?>IA</span>
+                        <?php endif; ?>
+                        <?php if (!empty($usoEnPlan[$receta['id_receta']])): ?>
+                            <span class="k-badge absolute left-3 top-3 text-[11px]" style="background-color: var(--k-surface);"><?= icono('calendar', 'h-3 w-3') ?><?= (int) $usoEnPlan[$receta['id_receta']] ?>× en el plan</span>
                         <?php endif; ?>
                     </div>
                     <div class="flex flex-1 flex-col p-5">

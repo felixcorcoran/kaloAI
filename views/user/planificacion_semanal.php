@@ -108,6 +108,12 @@ include_once __DIR__ . '/../templates/header.php';
 <?php
 $diasEsp = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 $hoyNombre = $diasEsp[date('w')];
+// Resumen de la semana
+$numComidas = count($comidas);
+$diasConComida = array_filter($totalesDia, fn($t) => $t['kcal'] > 0);
+$mediaKcal = $diasConComida ? array_sum(array_column($diasConComida, 'kcal')) / count($diasConComida) : 0;
+$mediaProt = $diasConComida ? array_sum(array_column($diasConComida, 'p')) / count($diasConComida) : 0;
+$diasEnObjetivo = $metaKcal > 0 ? count(array_filter($totalesDia, fn($t) => $t['kcal'] >= $metaKcal * 0.9 && $t['kcal'] <= $metaKcal * 1.1)) : 0;
 $alertas = [
     'deleted'  => ['ok', 'Comida quitada del plan.'],
     'success'  => ['ok', 'Plan actualizado.'],
@@ -117,7 +123,8 @@ $alertas = [
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Plan semanal</h1>
+            <span class="k-pill"><?= icono('calendar') ?>Lunes a domingo</span>
+            <h1 class="k-title mt-3">Plan semanal</h1>
             <p class="k-subtitle">Toca una comida para ver la receta, o el día para ver su resumen.</p>
         </div>
         <!-- Objetivos diarios -->
@@ -139,13 +146,47 @@ $alertas = [
         <div class="k-alert k-alert-error mb-6"><?= icono('alert') ?><p><?= e($error) ?></p></div>
     <?php endif; ?>
 
+    <!-- RESUMEN DE LA SEMANA -->
+    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Comidas planificadas</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-indigo"><?= icono('utensils', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= $numComidas ?><span class="k-stat-unit">/ 35</span></p>
+            <div class="k-track mt-auto h-1.5"><div class="k-bar" style="width: <?= min(100, round($numComidas / 35 * 100)) ?>%"></div></div>
+        </div>
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Media diaria</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-orange"><?= icono('flame', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= number_format($mediaKcal, 0, ',', '.') ?><span class="k-stat-unit">kcal</span></p>
+            <p class="mt-auto pt-2 text-xs k-muted"><?= $metaKcal ? round($mediaKcal / $metaKcal * 100) . '% de tu objetivo, en los días con comidas' : 'Completa tu perfil para ver tu objetivo' ?></p>
+        </div>
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Proteína media</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-blue"><?= icono('activity', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= round($mediaProt) ?><span class="k-stat-unit">/ <?= round($metaP) ?> g</span></p>
+            <div class="k-macro-p k-track mt-auto h-1.5"><div class="k-bar k-macro-bar" style="width: <?= $metaP > 0 ? min(100, round($mediaProt / $metaP * 100)) : 0 ?>%"></div></div>
+        </div>
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Días en su objetivo</p><span class="k-icon-tile h-8 w-8 rounded-lg"><?= icono('target', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= $diasEnObjetivo ?><span class="k-stat-unit">/ 7</span></p>
+            <div class="mt-auto flex items-end gap-1.5 pt-3" aria-label="Calorías de cada día frente al objetivo">
+                <?php foreach ($dias as $dia):
+                    $kcalDia = $totalesDia[$dia]['kcal'] ?? 0;
+                    $alto = $metaKcal > 0 ? max(8, min(100, round($kcalDia / $metaKcal * 100))) : 8;
+                    $enRango = $metaKcal > 0 && $kcalDia >= $metaKcal * 0.9 && $kcalDia <= $metaKcal * 1.1; ?>
+                    <a href="#dia-<?= e(mb_strtolower($dia, 'UTF-8')) ?>" class="flex flex-1 flex-col items-center gap-1" title="<?= e($dia) ?>: <?= number_format($kcalDia, 0, ',', '.') ?> kcal">
+                        <span class="flex h-8 w-full items-end overflow-hidden rounded" style="background-color: var(--k-surface-2);"><span class="block w-full rounded" style="height: <?= $alto ?>%; background-color: <?= $kcalDia > 0 ? ($enRango ? 'var(--k-brand)' : 'var(--k-indigo)') : 'transparent' ?>;"></span></span>
+                        <span class="text-[10px] k-muted"><?= e(mb_substr($dia, 0, 1)) ?></span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+
     <div class="space-y-4">
         <?php foreach ($dias as $dia):
             $t = $totalesDia[$dia] ?? ['kcal' => 0, 'p' => 0, 'c' => 0, 'g' => 0];
             $pct = $metaKcal > 0 ? ($t['kcal'] / $metaKcal) * 100 : 0;
             $exceso = $pct > 110;
             $esHoy = $dia === $hoyNombre; ?>
-            <section class="k-card overflow-hidden <?= $esHoy ? 'ring-2 ring-teal-500/40' : '' ?>">
+            <section id="dia-<?= e(mb_strtolower($dia, 'UTF-8')) ?>" class="k-card scroll-mt-6 overflow-hidden <?= $esHoy ? 'ring-2 ring-teal-500/40' : '' ?>">
                 <!-- Cabecera del día: abre el resumen -->
                 <button type="button" onclick='abrirResumenDia(<?= json_html($dia) ?>, <?= json_html($t) ?>)'
                         class="flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5 text-left transition hover:bg-[color:var(--k-surface-2)] sm:px-6">

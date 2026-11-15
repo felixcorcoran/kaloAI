@@ -191,13 +191,30 @@ $pesoActual = $pesos ? end($pesos) : null;
 $cambioPeso = ($pesoInicial !== null && count($pesos) > 1) ? round($pesoActual - $pesoInicial, 1) : null;
 $cambioCintura = count($cinturas) > 1 ? round(end($cinturas) - $cinturas[0], 1) : null;
 $coma = fn($n, $d = 1) => number_format((float) $n, $d, ',', '.');
+
+// IMC con la altura del perfil, y ritmo medio por semana desde el primer registro
+$stmtPerfil = $pdo->prepare("SELECT altura_cm, objetivo FROM perfil WHERE id_usuario = ?");
+$stmtPerfil->execute([$userId]);
+$perfilProg = $stmtPerfil->fetch() ?: [];
+$altura = (float) ($perfilProg['altura_cm'] ?? 0);
+$imc = ($altura > 0 && $pesoActual !== null) ? round($pesoActual / (($altura / 100) ** 2), 1) : null;
+$categoriaImc = $imc === null ? null : ($imc < 18.5 ? ['Bajo peso', 'k-badge-warn'] : ($imc < 25 ? ['Saludable', 'k-badge-ok'] : ($imc < 30 ? ['Sobrepeso', 'k-badge-warn'] : ['Obesidad', 'k-badge-danger'])));
+$conPeso = array_values(array_filter($progresoData, fn($r) => $r['peso_kg'] !== null));
+$semanas = count($conPeso) > 1 ? max(1, (strtotime(end($conPeso)['fecha']) - strtotime($conPeso[0]['fecha'])) / 604800) : 0;
+$ritmo = $semanas ? round($cambioPeso / $semanas, 2) : null;
+$cinturaActual = $cinturas ? end($cinturas) : null;
+$quiereBajar = in_array($perfilProg['objetivo'] ?? '', ['perdida_rapida', 'perdida_moderada', 'perdida_grasa'], true);
+$quiereSubir = ($perfilProg['objetivo'] ?? '') === 'ganancia_muscular';
+// "Va bien" según el objetivo: bajar si quiere perder, subir si quiere ganar
+$vaBien = fn(?float $cambio) => $cambio === null ? true : ($quiereSubir ? $cambio >= 0 : ($quiereBajar ? $cambio <= 0 : abs($cambio) < 1));
 $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
 ?>
 
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Progreso</h1>
+            <span class="k-pill"><?= icono('activity') ?><?= count($progresoData) ?> <?= count($progresoData) === 1 ? 'registro' : 'registros' ?></span>
+            <h1 class="k-title mt-3">Progreso</h1>
             <p class="k-subtitle">Registra tu peso con regularidad: tus objetivos de calorías y macros se recalculan con él.</p>
         </div>
     </div>
@@ -209,29 +226,46 @@ $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
     <?php endif; ?>
 
     <!-- RESUMEN -->
-    <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div class="k-card k-card-pad">
-            <p class="k-stat-label">Peso actual</p>
-            <p class="k-stat-value mt-1"><?= $pesoActual !== null ? $coma($pesoActual) : '—' ?><span class="k-stat-unit">kg</span></p>
+    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Peso actual</p><span class="k-icon-tile h-8 w-8 rounded-lg"><?= icono('activity', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= $pesoActual !== null ? $coma($pesoActual) : '—' ?><span class="k-stat-unit">kg</span></p>
+            <div class="mt-auto flex items-center gap-2 pt-3 text-xs k-muted">
+                <?php if ($cambioPeso !== null): ?>
+                    <span class="k-delta <?= $vaBien($cambioPeso) ? 'k-delta-ok' : 'k-delta-warn' ?>"><span class="k-delta-icon"><?= icono($cambioPeso <= 0 ? 'trend-down' : 'trend-up') ?></span><?= $signo($cambioPeso) ?> kg</span>
+                    desde <?= $coma($pesoInicial) ?> kg
+                <?php else: ?>Registra tu peso para ver el cambio<?php endif; ?>
+            </div>
         </div>
-        <div class="k-card k-card-pad">
-            <p class="k-stat-label">Peso inicial</p>
-            <p class="k-stat-value mt-1"><?= $pesoInicial !== null ? $coma($pesoInicial) : '—' ?><span class="k-stat-unit">kg</span></p>
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Cintura</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-indigo"><?= icono('target', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= $cinturaActual !== null ? $coma($cinturaActual) : '—' ?><span class="k-stat-unit">cm</span></p>
+            <div class="mt-auto flex items-center gap-2 pt-3 text-xs k-muted">
+                <?php if ($cambioCintura !== null): ?>
+                    <span class="k-delta <?= $cambioCintura <= 0 ? 'k-delta-ok' : 'k-delta-warn' ?>"><span class="k-delta-icon"><?= icono($cambioCintura <= 0 ? 'trend-down' : 'trend-up') ?></span><?= $signo($cambioCintura) ?> cm</span>
+                    desde el inicio
+                <?php else: ?>Opcional: mídela cuando te peses<?php endif; ?>
+            </div>
         </div>
-        <div class="k-card k-card-pad">
-            <p class="k-stat-label">Cambio de peso</p>
-            <p class="k-stat-value mt-1 <?= $cambioPeso === null ? '' : ($cambioPeso <= 0 ? 'text-emerald-600' : 'text-amber-600') ?>"><?= $cambioPeso !== null ? $signo($cambioPeso) : '—' ?><span class="k-stat-unit">kg</span></p>
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Índice de masa corporal</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-rose"><?= icono('user', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= $imc !== null ? $coma($imc) : '—' ?></p>
+            <div class="mt-auto flex items-center gap-2 pt-3 text-xs k-muted">
+                <?php if ($categoriaImc): ?><span class="k-badge <?= $categoriaImc[1] ?>"><?= $categoriaImc[0] ?></span>con <?= (int) $altura ?> cm de altura
+                <?php else: ?>Añade tu altura en el perfil<?php endif; ?>
+            </div>
         </div>
-        <div class="k-card k-card-pad">
-            <p class="k-stat-label">Cambio de cintura</p>
-            <p class="k-stat-value mt-1 <?= $cambioCintura === null ? '' : ($cambioCintura <= 0 ? 'text-emerald-600' : 'text-amber-600') ?>"><?= $cambioCintura !== null ? $signo($cambioCintura) : '—' ?><span class="k-stat-unit">cm</span></p>
+        <div class="k-card flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Ritmo medio</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-amber"><?= icono('clock', 'h-4 w-4') ?></span></div>
+            <p class="k-stat-value mt-3"><?= $ritmo !== null ? $signo($ritmo) : '—' ?><span class="k-stat-unit">kg/semana</span></p>
+            <p class="mt-auto pt-3 text-xs k-muted"><?= $ritmo === null ? 'Necesitas al menos dos registros' : ($quiereBajar && $ritmo < -1 ? 'Más rápido de lo recomendable (hasta 1 kg/sem)' : 'En ' . $coma($semanas, 0) . ' ' . (round($semanas) == 1 ? 'semana' : 'semanas')) ?></p>
         </div>
     </div>
 
     <div class="grid items-start gap-6 lg:grid-cols-3">
         <!-- GRÁFICO -->
         <section class="k-card k-card-pad lg:col-span-2">
-            <h2 class="k-section-title">Evolución del peso</h2>
+            <div class="flex items-center justify-between"><h2 class="k-section-title">Evolución del peso</h2><?php if ($pesoInicial !== null): ?><span class="text-xs k-muted">Inicio <?= $coma($pesoInicial) ?> kg</span><?php endif; ?></div>
             <?php if (count($pesos) >= 2): ?>
                 <div id="chartContainer" class="relative mt-4 h-64"><canvas id="sparklineChart" class="absolute inset-0" aria-label="Gráfico de la evolución del peso"></canvas></div>
             <?php else: ?>
@@ -239,6 +273,10 @@ $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
                     <span class="k-empty-icon"><?= icono('activity') ?></span>
                     <p class="text-sm k-muted">Con dos registros o más verás aquí tu evolución.</p>
                 </div>
+            <?php endif; ?>
+            <?php if (count($cinturas) >= 2): ?>
+                <h3 class="mt-8 text-sm font-semibold k-strong">Cintura</h3>
+                <div class="relative mt-3 h-40"><canvas id="cinturaChart" class="absolute inset-0" aria-label="Gráfico de la evolución de la cintura"></canvas></div>
             <?php endif; ?>
         </section>
 

@@ -280,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Listados con buscador
     prepararFiltroDeFilas('realTimeSearch', '.user-row', 'sinUsuarios', 'roleFilter');
     prepararFiltroDeFilas('buscadorPaciente', '.fila-paciente', 'noResultados');
+    prepararFiltroDeFilas('buscadorDespensa', '.fila-despensa', 'sinIngredientes');
 
     // Generador con IA: pantalla de espera mientras responde la API
     const formularioIA = document.getElementById('formGeneradorIA');
@@ -298,6 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iniciarRestricciones();
     iniciarProgreso();
     iniciarGraficoPanel();
+    iniciarGraficoAdmin();
     iniciarCarrusel();
 });
 
@@ -379,14 +381,16 @@ function colorMarca() {
 }
 
 /** Gráfico de línea de peso en un <canvas>. */
-function graficoPeso(lienzo, datos, conEjes) {
-    if (!window.Chart || !lienzo || datos.length < 2) return;
-    const color = colorMarca();
+function graficoPeso(lienzo, datos, conEjes, campo = 'peso_kg', unidad = 'kg', colorLinea = null) {
+    if (!window.Chart || !lienzo) return;
+    datos = datos.filter(d => d[campo] !== null && d[campo] !== '' && parseFloat(d[campo]) > 0);
+    if (datos.length < 2) return;
+    const color = colorLinea || colorMarca();
     const contexto = lienzo.getContext('2d');
     const degradado = contexto.createLinearGradient(0, 0, 0, lienzo.clientHeight || 240);
     degradado.addColorStop(0, color + (conEjes ? '33' : '26'));
     degradado.addColorStop(1, color + '00');
-    const pesos = datos.map(d => parseFloat(d.peso_kg));
+    const pesos = datos.map(d => parseFloat(d[campo]));
 
     new Chart(contexto, {
         type: 'line',
@@ -405,7 +409,7 @@ function graficoPeso(lienzo, datos, conEjes) {
                     displayColors: false,
                     callbacks: {
                         title: c => new Date(c[0].label).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
-                        label: c => c.raw + ' kg',
+                        label: c => String(c.raw).replace('.', ',') + ' ' + unidad,
                     },
                 },
             },
@@ -420,7 +424,10 @@ function graficoPeso(lienzo, datos, conEjes) {
 }
 
 function iniciarProgreso() {
-    if (window.progresoData) graficoPeso(document.getElementById('sparklineChart'), window.progresoData, true);
+    if (window.progresoData) {
+        graficoPeso(document.getElementById('sparklineChart'), window.progresoData, true);
+        graficoPeso(document.getElementById('cinturaChart'), window.progresoData, true, 'cintura_cm', 'cm', varCss('--k-indigo', '#6366f1'));
+    }
 
     // Borrar un registro: el botón lleva la fecha en data-fecha
     document.querySelectorAll('.btn-delete-progreso').forEach(boton => {
@@ -435,6 +442,32 @@ function iniciarProgreso() {
 /** Valor de una variable CSS del tema actual (claro u oscuro). */
 function varCss(nombre, porDefecto) {
     return getComputedStyle(document.documentElement).getPropertyValue(nombre).trim() || porDefecto;
+}
+
+/** Panel de administración: barras con las altas de cada mes. */
+function iniciarGraficoAdmin() {
+    const datos = window.adminData;
+    const lienzo = document.getElementById('altasChart');
+    if (!datos || !lienzo || !window.Chart) return;
+    const ctx = lienzo.getContext('2d');
+    const indigo = varCss('--k-indigo', '#6366f1');
+    const degradado = ctx.createLinearGradient(0, 0, 0, lienzo.clientHeight || 224);
+    degradado.addColorStop(0, indigo);
+    degradado.addColorStop(1, indigo + '55');
+    const ultimo = datos.altas.length - 1;
+    new Chart(ctx, {
+        type: 'bar',
+        data: { labels: datos.etiquetas, datasets: [{ data: datos.altas, borderRadius: 10, borderSkipped: false, barPercentage: 0.55, maxBarThickness: 56,
+                backgroundColor: datos.altas.map((_, i) => i === ultimo ? colorMarca() : degradado) }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => c.raw + (c.raw === 1 ? ' alta' : ' altas') } } },
+            scales: {
+                x: { grid: { display: false }, border: { display: false } },
+                y: { beginAtZero: true, ticks: { precision: 0, maxTicksLimit: 4 }, border: { display: false }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
+            },
+        },
+    });
 }
 
 function iniciarGraficoPanel() {
