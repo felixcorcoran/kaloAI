@@ -123,12 +123,14 @@ final class BaseDatosTest extends TestCase
     {
         $prompts = [];
         $ia = function (string $p) use (&$prompts) { $prompts[] = $p; return json_encode(['titulo' => 'x', 'ingredientes_usados' => []]); };
-        // Un día con 1900 kcal ya planificadas: para la cena quedan menos que su 25 % habitual
-        $meta = (int) $this->valor("SELECT tdee_calorias FROM perfil WHERE id_usuario = 3");
-        self::$pdo->exec("UPDATE receta SET calorias_por_racion = 900 WHERE id_receta = 2");
+        // Un día casi lleno: para la cena quedan menos calorías que su 25 % habitual (y más de 150)
+        // La meta es la del objetivo (calorías netas), no el TDEE de mantenimiento
+        $meta = (int) $this->valor("SELECT calorias_netas_objetivo FROM perfil WHERE id_usuario = 3");
+        self::$pdo->exec("UPDATE receta SET calorias_por_racion = 800 WHERE id_receta = 2");
         $planificadas = (int) $this->valor("SELECT SUM(r.calorias_por_racion) FROM comida_planificada cp JOIN receta r USING (id_receta) WHERE cp.dia_semana = 0");
         generarRecetaInteligente(self::LAURA, false, 'Lunes', 'Cena', '', $ia, self::$pdo);
-        $this->assertLessThan(round($meta * 0.25), $meta - $planificadas, 'El escenario de la prueba es el correcto');
+        $this->assertLessThan(round($meta * 0.25), $meta - $planificadas, "El escenario de la prueba es el correcto");
+        $this->assertGreaterThan(150, $meta - $planificadas);
         $this->assertStringContainsString('Calorías: ' . ($meta - $planificadas) . ' kcal', $prompts[0]);
     }
 

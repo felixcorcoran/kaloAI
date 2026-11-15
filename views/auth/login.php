@@ -70,79 +70,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+
+$pageTitle = "KaloAI | Entrar";
+include_once __DIR__ . '/../templates/header.php';
 ?>
 
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - KaloAI</title>
-    <?php include __DIR__ . '/../templates/tema.php'; ?>
-    <!-- TAILWIND COMPILADO (npm run build:css) -->
-    <link rel="stylesheet" href="<?= BASE_URL ?>public/css/tailwind.css?v=<?= @filemtime(__DIR__ . '/../../public/css/tailwind.css') ?>">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
-</head>
-<body class="bg-gray-50 flex items-center justify-center min-h-screen p-6">
-    <!-- MODO OSCURO: después de los estilos de Tailwind para poder sobrescribirlos -->
-    <link rel="stylesheet" href="<?= BASE_URL ?>public/css/oscuro.css">
-    <!-- BOTÓN VOLVER: Enlace para regresar al index -->
-    <div class="absolute top-8 left-8">
-        <a href="../../index.php" class="flex items-center gap-2 text-gray-400 hover:text-teal-600 transition-all font-bold text-sm uppercase tracking-widest group">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 transition-transform group-hover:-translate-x-1">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-            </svg>
-            Volver
-        </a>
-    </div>
-    <!-- CONTENEDOR PRINCIPAL: Tarjeta de acceso con diseño minimalista -->
-    <div class="max-w-md w-full bg-white p-10 rounded-[40px] shadow-2xl border border-gray-100">
-        
-        <!-- BRANDING: Identidad visual en el formulario -->
-        <div class="text-center mb-10">
-            <h1 class="text-4xl font-black text-gray-900 tracking-tighter italic">Kalo<span class="text-teal-600">AI</span></h1>
-            <p class="text-gray-400 text-sm mt-2 font-semibold uppercase tracking-widest">Acceso a la plataforma</p>
+<div class="k-container flex min-h-[calc(100vh-12rem)] items-center justify-center py-12">
+    <div class="w-full max-w-sm">
+        <div class="mb-8 text-center">
+            <h1 class="font-display text-2xl font-bold tracking-tight text-gray-900">Hola de nuevo</h1>
+            <p class="mt-1 text-sm text-gray-500">Entra para ver tu plan de hoy.</p>
         </div>
 
-        <!-- GESTIÓN DE ERRORES: Feedback visual ante fallos de autenticación -->
+        <?php if (isset($_GET['loggedout'])): ?>
+            <div class="k-alert k-alert-ok mb-4"><?= icono('check') ?><p>Has cerrado sesión.</p></div>
+        <?php endif; ?>
         <?php if ($error): ?>
-            <div class="bg-red-50 text-red-600 p-4 rounded-2xl mb-6 text-sm font-bold border border-red-100 animate-pulse text-center">
-                <?= e($error) ?>
-            </div>
+            <div class="k-alert k-alert-error mb-4" role="alert"><?= icono('alert') ?><p><?= e($error) ?></p></div>
         <?php endif; ?>
 
-        <!-- FORMULARIO DE ACCESO: Captura de credenciales -->
-        <form method="POST" action="" class="space-y-6">
+        <form method="POST" action="" class="k-card k-card-pad space-y-4">
             <?= campoCsrf() ?>
             <div>
-                <label class="block text-xs font-black uppercase text-gray-400 mb-2 ml-1">Correo Electrónico</label>
-                <input type="email" name="email" required 
-                       class="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-teal-500 transition-all text-gray-700"
-                       placeholder="ejemplo@kalo.com">
+                <label for="email" class="k-label">Correo electrónico</label>
+                <input id="email" type="email" name="email" required autocomplete="email" class="k-input" placeholder="nombre@correo.com" value="<?= e($_POST['email'] ?? '') ?>">
             </div>
-
             <div>
-                <label class="block text-xs font-black uppercase text-gray-400 mb-2 ml-1">Contraseña</label>
-                <input type="password" name="password" required 
-                       class="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-teal-500 transition-all text-gray-700"
-                       placeholder="••••••••">
+                <label for="password" class="k-label">Contraseña</label>
+                <input id="password" type="password" name="password" required autocomplete="current-password" class="k-input">
             </div>
-
-            <!-- ACCIÓN PRINCIPAL: Botón de envío -->
-            <button type="submit" 
-                    class="w-full bg-teal-600 hover:bg-teal-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-teal-200 transition-all transform hover:scale-[1.02] active:scale-95 uppercase tracking-widest text-sm">
-                Entrar ahora
-            </button>
+            <button type="submit" class="k-btn k-btn-primary w-full">Entrar</button>
         </form>
 
-        <!-- NAVEGACIÓN SECUNDARIA: Enlace alternativo para nuevos usuarios -->
-        <div class="mt-10 text-center">
-            <p class="text-gray-400 text-sm font-semibold">
-                ¿No tienes cuenta? 
-                <a href="registro.php" class="text-teal-600 hover:text-teal-800 transition-colors">Regístrate gratis</a>
-            </p>
-        </div>
+        <p class="mt-6 text-center text-sm text-gray-500">
+            ¿No tienes cuenta? <a href="registro.php" class="font-semibold text-teal-700 hover:underline">Crea una gratis</a>
+        </p>
     </div>
+</div>
 
-</body>
-</html>
+<?php include_once __DIR__ . '/../templates/footer.php'; ?>

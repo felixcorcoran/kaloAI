@@ -150,7 +150,8 @@ function normalizarRecetaIA(?string $respuesta, array $objetivo): ?array {
             'carbohidratos' => $macros['carbohidratos'] ?? $macros['carbos'] ?? $macros['carbs'] ?? $objetivo['carbohidratos'],
             'grasas'        => $macros['grasas'] ?? $macros['fats'] ?? $objetivo['grasas'],
         ],
-        'ingredientes_usados' => $ingredientes,
+        // Tras unificar nombres pueden quedar repetidos ("Aceite" y "Aceite de oliva"): se suman
+        'ingredientes_usados' => unificarIngredientes($ingredientes),
         'instrucciones' => $instrucciones,
         'raciones_sugeridas' => $data['raciones_sugeridas'] ?? 1,
     ];
@@ -172,7 +173,8 @@ function generarRecetaInteligente($userId, $soloInventario = false, $dia = null,
     $stmt->execute([$userId]);
     $inventario = $stmt->fetchAll();
 
-    $stmt = $pdo->prepare("SELECT tdee_calorias FROM perfil WHERE id_usuario = ?");
+    // Las calorías del objetivo (con el déficit o superávit), no las de mantenimiento
+    $stmt = $pdo->prepare("SELECT COALESCE(calorias_netas_objetivo, tdee_calorias) FROM perfil WHERE id_usuario = ?");
     $stmt->execute([$userId]);
     $metaKcalDiaria = (int) ($stmt->fetchColumn() ?: 2000);
 

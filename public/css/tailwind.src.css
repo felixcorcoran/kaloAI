@@ -1,3 +1,243 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * SISTEMA VISUAL DE KALOAI
+ * Colores como variables (claro en :root, oscuro en .dark) y componentes k-*
+ * que usan esas variables: así cada pantalla hereda el mismo aspecto y el
+ * modo oscuro sale solo. Guía de uso: docs/estilo.md
+ */
+
+@layer base {
+    :root {
+        --k-bg: #f5f7f7;
+        --k-surface: #ffffff;
+        --k-surface-2: #f3f6f6;
+        --k-border: rgb(15 23 42 / 0.08);
+        --k-border-strong: rgb(15 23 42 / 0.14);
+        --k-text: #0f1a19;
+        --k-text-2: #3f4b4a;
+        --k-muted: #6b7877;
+        --k-brand: #0d9488;
+        --k-brand-strong: #0f766e;
+        --k-brand-soft: #e7f6f4;
+        --k-brand-text: #0f766e;
+        --k-danger: #dc2626;
+        --k-danger-soft: #fdecec;
+        --k-warn-soft: #fff6e5;
+        --k-warn-text: #92400e;
+        --k-ok-soft: #e8f7ef;
+        --k-ok-text: #166534;
+        /* Macronutrientes: siempre los mismos colores en toda la web */
+        --k-prot: #3b82f6;
+        --k-prot-soft: #eaf2fe;
+        --k-carb: #f59e0b;
+        --k-carb-soft: #fef5e4;
+        --k-fat: #f43f5e;
+        --k-fat-soft: #feecef;
+        --k-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.04);
+        --k-shadow-lg: 0 20px 40px -12px rgb(15 23 42 / 0.18);
+    }
+
+    .dark {
+        --k-bg: #0b1211;
+        --k-surface: #121b1a;
+        --k-surface-2: #172220;
+        --k-border: rgb(255 255 255 / 0.07);
+        --k-border-strong: rgb(255 255 255 / 0.13);
+        --k-text: #eef3f2;
+        --k-text-2: #c4cfcd;
+        --k-muted: #8d9b99;
+        --k-brand: #14b8a6;
+        --k-brand-strong: #2dd4bf;
+        --k-brand-soft: rgb(20 184 166 / 0.12);
+        --k-brand-text: #5eead4;
+        --k-danger: #f87171;
+        --k-danger-soft: rgb(239 68 68 / 0.12);
+        --k-warn-soft: rgb(245 158 11 / 0.12);
+        --k-warn-text: #fcd34d;
+        --k-ok-soft: rgb(34 197 94 / 0.12);
+        --k-ok-text: #86efac;
+        --k-prot: #60a5fa;
+        --k-prot-soft: rgb(59 130 246 / 0.14);
+        --k-carb: #fbbf24;
+        --k-carb-soft: rgb(245 158 11 / 0.14);
+        --k-fat: #fb7185;
+        --k-fat-soft: rgb(244 63 94 / 0.14);
+        --k-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+        --k-shadow-lg: 0 20px 40px -12px rgb(0 0 0 / 0.6);
+    }
+
+    /* "hidden" siempre oculta, aunque el elemento tenga una clase con display */
+    [hidden] { display: none !important; }
+
+    /* Los campos ocultos (token CSRF…) no cuentan para el espaciado de space-y-* */
+    [class*="space-y-"] > input[type="hidden"] + :not(input[type="hidden"]) { margin-top: 0; }
+
+    /* Páginas de la aplicación (la portada tiene su propio fondo) */
+    body.k-app {
+        background-color: var(--k-bg);
+        color: var(--k-text-2);
+    }
+}
+
+@layer components {
+    /* ---------- Estructura de página ---------- */
+    .k-container { @apply mx-auto w-full max-w-6xl px-4 sm:px-6; }
+    .k-page { @apply py-6 sm:py-10; }
+    .k-page-head { @apply mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between; }
+    .k-eyebrow { @apply text-xs font-semibold uppercase tracking-wider; color: var(--k-brand-text); }
+    .k-title { @apply font-display text-2xl font-bold tracking-tight sm:text-3xl; color: var(--k-text); }
+    .k-subtitle { @apply mt-1.5 max-w-2xl text-sm sm:text-base; color: var(--k-muted); }
+    .k-section-title { @apply font-display text-base font-semibold sm:text-lg; color: var(--k-text); }
+    .k-back { @apply mb-4 inline-flex items-center gap-1 text-sm font-medium transition-colors; color: var(--k-muted); }
+    .k-back:hover { color: var(--k-brand-text); }
+    .k-muted { color: var(--k-muted); }
+    .k-strong { color: var(--k-text); }
+
+    /* ---------- Tarjetas ---------- */
+    .k-card {
+        @apply rounded-2xl border;
+        background-color: var(--k-surface);
+        border-color: var(--k-border);
+        box-shadow: var(--k-shadow);
+    }
+    .k-card-pad { @apply p-5 sm:p-6; }
+    .k-card-head { @apply flex items-center justify-between gap-3 border-b px-5 py-4 sm:px-6; border-color: var(--k-border); }
+    .k-card-link { @apply transition hover:-translate-y-0.5; }
+    .k-card-link:hover { border-color: var(--k-border-strong); box-shadow: var(--k-shadow-lg); }
+    .k-divider { @apply border-t; border-color: var(--k-border); }
+    .k-subtle { background-color: var(--k-surface-2); }
+
+    /* ---------- Botones ---------- */
+    .k-btn {
+        @apply inline-flex h-10 select-none items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 text-sm font-semibold
+               transition focus:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-50;
+        --tw-ring-color: rgb(20 184 166 / 0.25);
+    }
+    .k-btn svg { @apply h-4 w-4 shrink-0; }
+    .k-btn-primary { background-color: var(--k-brand); color: #fff; box-shadow: 0 1px 2px rgb(13 148 136 / 0.3); }
+    .k-btn-primary:hover { background-color: #0f766e; }
+    .k-btn-secondary { @apply border; background-color: var(--k-surface); border-color: var(--k-border-strong); color: var(--k-text); }
+    .k-btn-secondary:hover { background-color: var(--k-surface-2); }
+    .k-btn-ghost { color: var(--k-text-2); }
+    .k-btn-ghost:hover { background-color: var(--k-surface-2); color: var(--k-text); }
+    .k-btn-danger { background-color: #dc2626; color: #fff; }
+    .k-btn-danger:hover { background-color: #b91c1c; }
+    .k-btn-sm { @apply h-8 rounded-lg px-3 text-xs; }
+    .k-btn-lg { @apply h-12 px-6 text-base; }
+    .k-btn-icon { @apply h-9 w-9 rounded-lg p-0; }
+    .k-btn-icon svg { @apply h-[18px] w-[18px]; }
+    .k-btn-icon.k-btn-danger-text:hover { background-color: var(--k-danger-soft); color: var(--k-danger); }
+
+    /* ---------- Formularios ---------- */
+    .k-label { @apply mb-1.5 block text-sm font-medium; color: var(--k-text); }
+    .k-hint { @apply mt-1.5 text-xs; color: var(--k-muted); }
+    .k-input {
+        @apply block h-11 w-full rounded-xl border px-3.5 text-sm shadow-none transition
+               placeholder:text-gray-400 focus:outline-none focus:ring-4;
+        background-color: var(--k-surface);
+        border-color: var(--k-border-strong);
+        color: var(--k-text);
+        --tw-ring-color: rgb(20 184 166 / 0.18);
+    }
+    .k-input:focus { border-color: var(--k-brand); }
+    textarea.k-input { @apply h-auto py-3 leading-relaxed; }
+    select.k-input { @apply pr-9; }
+    .k-search { @apply relative; }
+    .k-search svg { @apply pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2; color: var(--k-muted); }
+    .k-search .k-input { @apply pl-10; }
+
+    /* Opciones tipo píldora (radio oculto + etiqueta) */
+    .k-choice {
+        @apply flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition;
+        background-color: var(--k-surface);
+        border-color: var(--k-border-strong);
+        color: var(--k-text-2);
+    }
+    .peer:checked + .k-choice { border-color: var(--k-brand); background-color: var(--k-brand-soft); color: var(--k-brand-text); }
+    .peer:focus-visible + .k-choice { box-shadow: 0 0 0 4px rgb(20 184 166 / 0.2); }
+
+    /* Control segmentado (filtros): botones con aria-pressed */
+    .k-seg { @apply inline-flex flex-wrap gap-1 rounded-xl p-1; background-color: var(--k-surface-2); }
+    .k-seg > button { @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition; color: var(--k-muted); }
+    .k-seg > button:hover { color: var(--k-text); }
+    .k-seg > button[aria-pressed="true"] { background-color: var(--k-surface); color: var(--k-text); box-shadow: var(--k-shadow); }
+
+    /* ---------- Etiquetas y avisos ---------- */
+    .k-badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; background-color: var(--k-surface-2); color: var(--k-text-2); }
+    .k-badge-brand { background-color: var(--k-brand-soft); color: var(--k-brand-text); }
+    .k-badge-danger { background-color: var(--k-danger-soft); color: var(--k-danger); }
+    .k-badge-warn { background-color: var(--k-warn-soft); color: var(--k-warn-text); }
+    .k-badge-ok { background-color: var(--k-ok-soft); color: var(--k-ok-text); }
+
+    .k-alert { @apply flex items-start gap-3 rounded-xl border px-4 py-3 text-sm; }
+    .k-alert svg { @apply mt-0.5 h-4 w-4 shrink-0; }
+    .k-alert-ok { background-color: var(--k-ok-soft); border-color: transparent; color: var(--k-ok-text); }
+    .k-alert-error { background-color: var(--k-danger-soft); border-color: transparent; color: var(--k-danger); }
+    .k-alert-info { background-color: var(--k-brand-soft); border-color: transparent; color: var(--k-brand-text); }
+    .k-alert-warn { background-color: var(--k-warn-soft); border-color: transparent; color: var(--k-warn-text); }
+
+    /* ---------- Datos ---------- */
+    .k-stat-label { @apply text-xs font-medium; color: var(--k-muted); }
+    .k-stat-value { @apply font-display text-2xl font-bold tabular-nums tracking-tight; color: var(--k-text); }
+    .k-stat-unit { @apply ml-0.5 text-sm font-medium; color: var(--k-muted); }
+    .k-track { @apply h-2 w-full overflow-hidden rounded-full; background-color: var(--k-surface-2); }
+    .k-bar { @apply h-full rounded-full transition-all duration-700; background-color: var(--k-brand); }
+    .k-bar-over { background-color: var(--k-danger); }
+
+    .k-macro-p { --k-macro: var(--k-prot); --k-macro-soft: var(--k-prot-soft); }
+    .k-macro-c { --k-macro: var(--k-carb); --k-macro-soft: var(--k-carb-soft); }
+    .k-macro-f { --k-macro: var(--k-fat); --k-macro-soft: var(--k-fat-soft); }
+    .k-macro-dot { @apply inline-block h-2.5 w-2.5 shrink-0 rounded-full; background-color: var(--k-macro); }
+    .k-macro-bar { background-color: var(--k-macro); }
+    .k-macro-chip { @apply rounded-xl px-3 py-2.5; background-color: var(--k-macro-soft); }
+
+    /* ---------- Tablas y listas ---------- */
+    .k-table { @apply w-full text-left text-sm; }
+    .k-table th { @apply px-5 py-3 text-xs font-medium sm:px-6; color: var(--k-muted); background-color: var(--k-surface-2); }
+    .k-table td { @apply border-t px-5 py-3.5 sm:px-6; border-color: var(--k-border); }
+    .k-table tbody tr:hover td { background-color: var(--k-surface-2); }
+    .k-list > * + * { @apply border-t; border-color: var(--k-border); }
+
+    .k-empty { @apply flex flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-12 text-center; border-color: var(--k-border-strong); }
+    .k-empty-icon { @apply mb-3 grid h-11 w-11 place-items-center rounded-xl; background-color: var(--k-brand-soft); color: var(--k-brand-text); }
+    .k-empty-icon svg { @apply h-5 w-5; }
+
+    .k-icon-tile { @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl; background-color: var(--k-brand-soft); color: var(--k-brand-text); }
+    .k-icon-tile svg { @apply h-5 w-5; }
+
+    .k-avatar { @apply grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-sm font-semibold text-white; }
+
+    /* ---------- Modales (abrir/cerrar en main.js: abrirModal / cerrarModal) ---------- */
+    .k-modal { @apply fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center; }
+    .k-modal[hidden] { display: none; }
+    .k-modal-backdrop { @apply absolute inset-0 bg-gray-950/50 backdrop-blur-[2px]; animation: k-fade 0.15s ease-out; }
+    .k-modal-panel {
+        @apply relative w-full max-w-md rounded-2xl border p-6;
+        background-color: var(--k-surface);
+        border-color: var(--k-border);
+        box-shadow: var(--k-shadow-lg);
+        animation: k-pop 0.18s ease-out;
+    }
+    .k-modal-title { @apply font-display text-lg font-semibold; color: var(--k-text); }
+    .k-modal-close { @apply absolute right-4 top-4; }
+
+    /* ---------- Navegación de la aplicación ---------- */
+    .k-nav-link {
+        @apply inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors;
+        color: var(--k-muted);
+    }
+    .k-nav-link svg { @apply h-4 w-4; }
+    .k-nav-link:hover { color: var(--k-text); background-color: var(--k-surface-2); }
+    .k-nav-link[aria-current="page"] { color: var(--k-brand-text); background-color: var(--k-brand-soft); }
+}
+
+@keyframes k-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes k-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .k-modal-backdrop, .k-modal-panel { animation: none; }
+    .k-card-link:hover { transform: none; }
+}

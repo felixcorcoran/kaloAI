@@ -70,8 +70,8 @@ final class RecetaIATest extends TestCase
         $this->assertSame(600, $receta['calorias'], 'Si la IA no da calorías, se usa el objetivo');
         $this->assertSame(['proteinas' => 40, 'carbohidratos' => 55, 'grasas' => 15], $receta['macros']);
         $this->assertSame([
-            ['nombre' => 'Pechuga De Pollo', 'cantidad' => 150, 'unidad' => 'g'],
-            ['nombre' => 'Aceite De Oliva', 'cantidad' => 5, 'unidad' => 'ml'],
+            ['nombre' => 'Pechuga De Pollo', 'cantidad' => 150.0, 'unidad' => 'g'],
+            ['nombre' => 'Aceite De Oliva', 'cantidad' => 5.0, 'unidad' => 'ml'],
         ], $receta['ingredientes_usados']);
         $this->assertSame(['Cocina.', 'Sirve.'], $receta['instrucciones']);
     }

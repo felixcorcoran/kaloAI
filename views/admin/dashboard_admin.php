@@ -4,7 +4,7 @@
  * Proporciona una interfaz para la gestión de usuarios, roles, 
  * asignaciones de nutricionistas y visualización de logs de auditoría.
  */
-$pageTitle = "KaloAI | Panel Admin";
+$pageTitle = "KaloAI | Usuarios";
     
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
@@ -48,203 +48,142 @@ $logs = $pdo->query("SELECT * FROM logs_actividad ORDER BY fecha DESC LIMIT 10")
 include_once __DIR__ . '/../templates/header.php'; 
 ?>
 
-<main class="container mx-auto mt-32 mb-20 px-6">
+<?php
+$roles = [1 => 'Admin', 2 => 'Nutricionista', 3 => 'Usuario'];
+$bloqueados = count(array_filter($usuarios, fn($u) => (int) $u['activo'] !== 1));
+$conNutri = count(array_filter($usuarios, fn($u) => !empty($u['id_nutricionista'])));
+$avisos = [
+    'borrado_exitoso' => ['ok', 'Usuario eliminado junto con todos sus datos.'],
+    'borrado_fallido' => ['error', 'No se pudo eliminar el usuario. Inténtalo de nuevo.'],
+    'no_autoborrado'  => ['error', 'No puedes eliminar tu propia cuenta desde aquí.'],
+];
+?>
 
-    <!-- ALERTAS DE SISTEMA: Feedback tras acciones de borrado -->
-    <?php if (isset($_GET['msg']) && $_GET['msg'] === 'borrado_exitoso'): ?>
-        <div id="successAlert" class="mb-8 bg-teal-500 text-white px-8 py-4 rounded-[25px] shadow-lg font-black uppercase text-[12px] tracking-widest animate-pulse flex justify-between items-center">
-            <span>¡Usuario eliminado del sistema correctamente!</span>
-            <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100">✕</button>
+<div class="k-container k-page">
+    <div class="k-page-head">
+        <div>
+            <h1 class="k-title">Usuarios</h1>
+            <p class="k-subtitle">Roles, nutricionista asignado y acceso de cada cuenta. Cada cambio queda en la actividad.</p>
         </div>
-    <?php elseif (isset($_GET['msg']) && in_array($_GET['msg'], ['borrado_fallido', 'no_autoborrado'], true)): ?>
-        <div class="mb-8 bg-red-500 text-white px-8 py-4 rounded-[25px] shadow-lg font-black uppercase text-[12px] tracking-widest flex justify-between items-center">
-            <span><?= $_GET['msg'] === 'no_autoborrado' ? 'No puedes eliminar tu propia cuenta.' : 'No se pudo eliminar el usuario. Inténtalo de nuevo.' ?></span>
-            <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100">✕</button>
-        </div>
+    </div>
+
+    <?php if (isset($avisos[$_GET['msg'] ?? ''])): [$tipo, $texto] = $avisos[$_GET['msg']]; ?>
+        <div class="k-alert k-alert-<?= $tipo ?> mb-6"><?= icono($tipo === 'ok' ? 'check' : 'alert') ?><p><?= e($texto) ?></p></div>
     <?php endif; ?>
 
-    <!-- INDICADORES (KPIs): Resumen rápido de estadísticas de la plataforma -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-        <div class="bg-teal-600 text-white p-8 rounded-[40px] shadow-lg shadow-teal-100 flex flex-col justify-center relative overflow-hidden group">
-            <div class="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-32 w-32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
+    <!-- CIFRAS -->
+    <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <?php foreach ([['Cuentas', $totalUsuarios, 'users'], ['Nutricionistas activos', $totalNutris, 'user-plus'],
+                        ['Pacientes con nutricionista', $conNutri, 'activity'], ['Bloqueadas', $bloqueados, 'lock']] as [$etiqueta, $valor, $ic]): ?>
+            <div class="k-card k-card-pad flex items-center gap-4">
+                <span class="k-icon-tile"><?= icono($ic) ?></span>
+                <div><p class="k-stat-label"><?= $etiqueta ?></p><p class="k-stat-value"><?= (int) $valor ?></p></div>
             </div>
-            <p class="text-[12px] opacity-80 uppercase font-black tracking-[0.2em] mb-1">Total Usuarios</p>
-            <h3 class="text-6xl font-black italic tracking-tighter"><?= $totalUsuarios ?></h3>
-        </div>
-
-        <div class="bg-white p-8 rounded-[40px] shadow-xl border border-gray-100 flex flex-col justify-center">
-            <p class="text-[12px] text-teal-600 uppercase font-black tracking-widest mb-1">Nutricionistas Activos</p>
-            <h3 id="nutriCounter" class="text-6xl font-black text-gray-900 italic tracking-tighter"><?= $totalNutris ?></h3>
-        </div>
-
-        <a href="../dashboard.php" class="bg-gray-900 p-8 rounded-[40px] shadow-2xl flex flex-col justify-center items-center group transition-all hover:bg-gray-800">
-            <p class="text-[12px] text-teal-400 uppercase font-black tracking-widest mb-2">Vista Aplicación</p>
-            <h3 class="text-xl font-black text-white flex items-center gap-2 uppercase italic">
-                Ver tu dashboard
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-teal-500 group-hover:translate-x-2 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-            </h3>
-        </a>
+        <?php endforeach; ?>
     </div>
 
-    <div class="bg-white p-8 md:p-12 rounded-[50px] shadow-2xl border border-gray-50">
-
-        <!-- CONTROLES DE FILTRADO: Búsqueda en tiempo real y filtro por rol -->
-        <div class="flex flex-col lg:flex-row justify-between items-center mb-12 gap-8">
-            <div class="text-center lg:text-left">
-                <h2 class="text-6xl font-black text-gray-900 uppercase tracking-tighter italic leading-none">
-                    Admin <span class="text-teal-600">Dashboard</span>
-                </h2>
-                <p class="text-gray-400 text-base font-medium mt-2 italic ml-1">Gestión avanzada de la plataforma KaloAI.</p>
-            </div>
-
-            <div class="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
-                <select id="roleFilter" class="px-8 py-5 bg-gray-50 border-none rounded-[25px] text-sm font-black uppercase tracking-widest text-gray-500 outline-none focus:ring-4 focus:ring-teal-500/10 transition-all cursor-pointer">
-                    <option value="all">Todos los Roles</option>
-                    <option value="1">Administradores</option>
-                    <option value="2">Nutricionistas</option>
-                    <option value="3">Usuarios</option>
+    <!-- USUARIOS -->
+    <section class="k-card">
+        <div class="k-card-head flex-col items-stretch gap-3 md:flex-row md:items-center">
+            <h2 class="k-section-title">Todas las cuentas</h2>
+            <div class="flex flex-col gap-2 sm:flex-row">
+                <label class="k-search sm:w-64">
+                    <?= icono('search') ?><span class="sr-only">Buscar usuario</span>
+                    <input type="search" id="realTimeSearch" class="k-input h-9" placeholder="Nombre o correo">
+                </label>
+                <label for="roleFilter" class="sr-only">Filtrar por rol</label>
+                <select id="roleFilter" class="k-input h-9 sm:w-44">
+                    <option value="all">Todos los roles</option>
+                    <?php foreach ($roles as $id => $nombre): ?><option value="<?= $id ?>"><?= $nombre ?></option><?php endforeach; ?>
                 </select>
-                
-                <div class="relative w-full sm:w-96">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-6">
-                        <svg class="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                    </span>
-                    <input type="text" id="realTimeSearch" placeholder="Buscar por nombre o email..." 
-                           class="w-full bg-gray-50 border-none py-5 pl-16 pr-8 rounded-[25px] text-base font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 outline-none transition-all placeholder:text-gray-300 shadow-inner">
-                </div>
             </div>
         </div>
 
-        <!-- LISTADO DE USUARIOS: Renderizado dinámico de filas con acciones AJAX -->
-        <div class="space-y-6">
-            <div class="hidden lg:grid grid-cols-10 px-12 mb-4 text-gray-400 text-[12px] uppercase font-black tracking-[0.2em]">
-                <div class="col-span-3">Usuario</div>
-                <div class="col-span-2 text-center">Nivel de Acceso</div>
-                <div class="col-span-2 text-center">Asignación Nutri</div>
-                <div class="col-span-3 text-right">Acciones</div>
-            </div>
-
-            <div id="contenedorUsuarios">
-                <?php foreach ($usuarios as $u): ?>
-                <div class="user-row grid grid-cols-1 lg:grid-cols-10 items-center bg-white border border-gray-100 p-8 md:px-12 rounded-[40px] shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 group mb-6"
-                     data-search="<?= strtolower(htmlspecialchars(($u['nombre_usuario'] ?? '') . ' ' . $u['correo'])) ?>" 
-                     data-role="<?= $u['id_rol'] ?>">
-                    
-                     <!-- Perfil -->
-                    <div class="col-span-1 lg:col-span-3 mb-6 lg:mb-0">
-                        <div class="font-black text-gray-900 text-xl tracking-tight group-hover:text-teal-600 transition-colors italic">
-                            <?= htmlspecialchars($u['nombre_usuario'] ?? 'Sin Perfil') ?>
+        <ul class="k-list">
+            <?php foreach ($usuarios as $u):
+                $esYo = (int) $u['id_usuario'] === (int) $_SESSION['user_id'];
+                $nombreU = $u['nombre_usuario'] ?: 'Sin perfil';
+                $activo = (int) $u['activo'] === 1; ?>
+                <li class="user-row grid items-center gap-3 px-5 py-4 sm:px-6 md:grid-cols-[minmax(0,1fr)_10.5rem_12rem_auto]"
+                    data-buscar="<?= e(mb_strtolower($nombreU . ' ' . $u['correo'], 'UTF-8')) ?>" data-rol="<?= (int) $u['id_rol'] ?>">
+                    <div class="flex min-w-0 items-center gap-3">
+                        <span class="k-avatar <?= $activo ? '' : 'opacity-40' ?>" aria-hidden="true"><?= e(mb_strtoupper(mb_substr($nombreU, 0, 1, 'UTF-8'), 'UTF-8')) ?></span>
+                        <div class="min-w-0">
+                            <p class="truncate font-medium k-strong"><?= e($nombreU) ?> <?php if ($esYo): ?><span class="k-badge ml-1">Tú</span><?php endif; ?></p>
+                            <p class="truncate text-sm k-muted"><?= e($u['correo']) ?> · desde <?= e(formatearFecha($u['fecha_creacion'])) ?></p>
                         </div>
-                        <div class="text-sm text-gray-400 font-bold"><?= htmlspecialchars($u['correo']) ?></div>
-                        <p class="text-[10px] font-bold text-gray-400 mt-2 uppercase tracking-widest">Registrado: <?= date('d/m/Y', strtotime($u['fecha_creacion'])) ?></p>
                     </div>
 
-                    <!-- Cambio de Rol (Trigger AJAX) -->
-                    <div class="col-span-1 lg:col-span-2 flex justify-center mb-6 lg:mb-0">
-                        <select onchange="actualizarCampoUsuario(<?= $u['id_usuario'] ?>, 'rol', this.value)" 
-                                class="text-[11px] font-black uppercase bg-gray-50 border-none rounded-2xl px-6 py-3.5 outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer transition-all">
-                            <option value="3" <?= $u['id_rol'] == 3 ? 'selected' : '' ?>>USUARIO</option>
-                            <option value="2" <?= $u['id_rol'] == 2 ? 'selected' : '' ?>>NUTRI</option>
-                            <option value="1" <?= $u['id_rol'] == 1 ? 'selected' : '' ?>>ADMIN</option>
+                    <label class="block">
+                        <span class="sr-only">Rol de <?= e($nombreU) ?></span>
+                        <select class="k-input h-9" onchange="actualizarCampoUsuario(<?= (int) $u['id_usuario'] ?>, 'rol', this.value)" <?= $esYo ? 'disabled' : '' ?>>
+                            <?php foreach ($roles as $id => $nombre): ?>
+                                <option value="<?= $id ?>" <?= (int) $u['id_rol'] === $id ? 'selected' : '' ?>><?= $nombre ?></option>
+                            <?php endforeach; ?>
                         </select>
-                    </div>
+                    </label>
 
-                    <!-- Asignación Profesional -->
-                    <div class="col-span-1 lg:col-span-2 flex justify-center mb-6 lg:mb-0">
-                        <?php if ($u['id_rol'] == 3): ?>
-                            <select onchange="actualizarCampoUsuario(<?= $u['id_usuario'] ?>, 'nutri', this.value)" 
-                                    class="text-[11px] bg-gray-50 border-none rounded-2xl px-6 py-3.5 outline-none w-full max-w-[200px] font-bold text-gray-600 italic cursor-pointer">
-                                <option value="">Sin asignar</option>
+                    <?php if ((int) $u['id_rol'] === 3): ?>
+                        <label class="block">
+                            <span class="sr-only">Nutricionista de <?= e($nombreU) ?></span>
+                            <select class="k-input h-9" onchange="actualizarCampoUsuario(<?= (int) $u['id_usuario'] ?>, 'nutri', this.value)">
+                                <option value="">Sin nutricionista</option>
                                 <?php foreach ($nutricionistas as $nutri): ?>
-                                    <option value="<?= $nutri['id_usuario'] ?>" <?= $u['id_nutricionista'] == $nutri['id_usuario'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($nutri['nombre']) ?>
-                                    </option>
+                                    <option value="<?= (int) $nutri['id_usuario'] ?>" <?= (int) $u['id_nutricionista'] === (int) $nutri['id_usuario'] ? 'selected' : '' ?>><?= e($nutri['nombre']) ?></option>
                                 <?php endforeach; ?>
                             </select>
-                        <?php else: ?>
-                            <span class="text-[11px] text-gray-300 uppercase font-black tracking-[0.15em] italic">Staff KaloAI</span>
+                        </label>
+                    <?php else: ?>
+                        <span class="hidden text-sm md:block k-muted">—</span>
+                    <?php endif; ?>
+
+                    <div class="flex items-center justify-end gap-1">
+                        <?php if (!$esYo): ?>
+                            <button type="button" onclick="alternarEstadoUsuario(<?= (int) $u['id_usuario'] ?>, <?= (int) $u['id_rol'] ?>, <?= $activo ? 0 : 1 ?>)"
+                                    class="k-btn k-btn-sm <?= $activo ? 'k-btn-secondary' : 'k-btn-primary' ?>" title="<?= $activo ? 'Bloquear el acceso' : 'Devolver el acceso' ?>">
+                                <?= $activo ? 'Bloquear' : 'Activar' ?>
+                            </button>
+                            <button type="button" onclick="abrirModalEliminarAdmin(<?= (int) $u['id_usuario'] ?>, <?= e(json_html($nombreU)) ?>)"
+                                    class="k-btn k-btn-ghost k-btn-icon k-btn-danger-text" aria-label="Eliminar a <?= e($nombreU) ?>"><?= icono('trash') ?></button>
                         <?php endif; ?>
                     </div>
+                </li>
+            <?php endforeach; ?>
+        </ul>
+        <p id="sinUsuarios" class="px-6 py-5 text-sm k-muted" hidden>Ninguna cuenta coincide con la búsqueda.</p>
+    </section>
 
-                    <!-- Botones de Acción: Bloqueo y Borrado -->
-                    <div class="col-span-1 lg:col-span-3 flex gap-3 justify-end">
-                        <button id="btn-status-<?= $u['id_usuario'] ?>" 
-                                onclick="alternarEstadoUsuario(<?= $u['id_usuario'] ?>, <?= $u['id_rol'] ?>, <?= $u['activo'] == 1 ? 0 : 1 ?>)" 
-                                class="flex-1 lg:flex-none px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95 <?= $u['activo'] == 1 ? 'bg-teal-50 text-teal-600 hover:bg-teal-500 hover:text-white' : 'bg-orange-500 text-white hover:bg-orange-600' ?>">
-                            <?= $u['activo'] == 1 ? 'ACTIVO' : 'BLOQUEADO' ?>
-                        </button>
-                        
-                        <button onclick="abrirModalEliminarAdmin(<?= $u['id_usuario'] ?>)" 
-                                class="px-6 py-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-95">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
+    <!-- ACTIVIDAD -->
+    <section class="k-card mt-6">
+        <div class="k-card-head"><h2 class="k-section-title">Actividad reciente</h2><span class="text-xs k-muted">Últimos 10 cambios</span></div>
+        <?php if (empty($logs)): ?>
+            <p class="px-6 py-5 text-sm k-muted">Sin actividad todavía.</p>
+        <?php else: ?>
+            <ul class="k-list">
+                <?php foreach ($logs as $log): ?>
+                    <li class="flex items-start gap-4 px-5 py-3 text-sm sm:px-6">
+                        <span class="mt-0.5 shrink-0 k-muted"><?= icono('clock', 'h-4 w-4') ?></span>
+                        <!-- El detalle se guarda como HTML con los nombres ya escapados (api_admin.php) -->
+                        <span class="flex-1 [&_b]:font-semibold [&_b]:text-[color:var(--k-text)]"><?= $log['detalle'] ?></span>
+                        <span class="shrink-0 text-xs tabular-nums k-muted"><?= date('d/m H:i', strtotime($log['fecha'])) ?></span>
+                    </li>
                 <?php endforeach; ?>
-            </div>
-        </div>
+            </ul>
+        <?php endif; ?>
+    </section>
+</div>
 
-        <!-- LOGS DE AUDITORÍA: Registro histórico de eventos del sistema -->
-        <div class="mt-20 bg-gray-900 p-12 rounded-[50px] shadow-2xl relative overflow-hidden">
-            <div class="absolute top-0 right-0 p-10 opacity-10">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </div>
-
-            <div class="flex justify-between items-center mb-10">
-                <div>
-                    <h3 class="text-3xl font-black uppercase tracking-tighter text-white italic">Logs de <span class="text-teal-400">Actividad</span></h3>
-                    <p class="text-gray-500 text-sm font-bold uppercase tracking-widest">Auditoría del sistema en tiempo real</p>
-                </div>
-                <div class="h-4 w-4 rounded-full bg-teal-500 animate-pulse"></div>
-            </div>
-
-            <div class="space-y-4">
-                <?php foreach($logs as $log): ?>
-                <div class="flex justify-between items-center bg-white/5 border border-white/5 p-6 rounded-3xl hover:bg-white/10 transition-all group">
-                    <span class="text-base text-gray-200 font-medium"><?= $log['detalle'] ?></span>
-                    <span class="text-[11px] text-gray-500 font-black uppercase bg-black/30 px-4 py-2 rounded-xl shrink-0 ml-6">
-                        <?= date('H:i | d M', strtotime($log['fecha'])) ?>
-                    </span>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    </div>
-</main>
-
-<!-- MODAL DE CONFIRMACIÓN: Capa de seguridad para eliminación permanente -->
-<div id="deleteConfirmModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4">
-    <div id="modalOverlay" class="absolute inset-0 bg-gray-900/60 backdrop-blur-sm opacity-0 transition-opacity duration-300"></div>
-    <div id="modalContent" class="relative bg-white rounded-[50px] shadow-2xl max-w-md w-full p-12 transform transition-all scale-95 opacity-0 duration-300">
-        <div class="text-center">
-            <div class="mx-auto flex items-center justify-center h-24 w-24 rounded-full bg-red-50 mb-8">
-                <svg class="h-12 w-12 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-            </div>
-            <h3 class="text-3xl font-black text-gray-900 uppercase tracking-tighter italic mb-3">¿Eliminar Usuario?</h3>
-            <p class="text-gray-500 text-base font-medium mb-10 italic leading-relaxed">Esta acción es irreversible. Se borrarán permanentemente todas las recetas y registros asociados.</p>
-            <div class="flex gap-4">
-                <button onclick="cerrarModalEliminar()" class="flex-1 px-8 py-5 bg-gray-100 text-gray-400 rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all">Cancelar</button>
-                <button onclick="ejecutarEliminacion()" class="flex-1 px-8 py-5 bg-red-600 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-red-700 shadow-lg shadow-red-200 transition-all">Confirmar Borrado</button>
-            </div>
+<!-- MODAL: ELIMINAR USUARIO -->
+<div id="modalBorrarUsuario" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloBorrarUsuario">
+    <div class="k-modal-backdrop"></div>
+    <div class="k-modal-panel max-w-sm">
+        <h2 id="tituloBorrarUsuario" class="k-modal-title">¿Eliminar a <span id="borrarUsuarioNombre">este usuario</span>?</h2>
+        <p class="mt-2 text-sm k-muted">Se borrarán su perfil, sus recetas, su plan, su despensa y su progreso. No se puede deshacer.</p>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="button" class="k-btn k-btn-danger" data-confirmar>Eliminar</button>
         </div>
     </div>
 </div>
 
-
-<?php 
-// Incluir el pie de página
-include_once __DIR__ . '/../templates/footer.php'; 
-?>
+<?php include_once __DIR__ . '/../templates/footer.php'; ?>

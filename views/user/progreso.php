@@ -182,201 +182,139 @@ $jsProgresoData = json_html($progresoData); // escapado: una nota con "</script>
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php';
 ?>
+<?php
+// Resumen calculado aquí (antes lo calculaba el JavaScript)
+$pesos = array_values(array_filter(array_column($progresoData, 'peso_kg'), fn($p) => $p !== null));
+$cinturas = array_values(array_filter(array_column($progresoData, 'cintura_cm'), fn($c) => $c !== null && $c > 0));
+$pesoInicial = $pesos[0] ?? null;
+$pesoActual = $pesos ? end($pesos) : null;
+$cambioPeso = ($pesoInicial !== null && count($pesos) > 1) ? round($pesoActual - $pesoInicial, 1) : null;
+$cambioCintura = count($cinturas) > 1 ? round(end($cinturas) - $cinturas[0], 1) : null;
+$coma = fn($n, $d = 1) => number_format((float) $n, $d, ',', '.');
+$signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
+?>
 
-<!-- CONTENEDOR DE PROGRESO: Enfoque en visualización de datos y analítica personal -->
-<div class="container mx-auto px-4 py-8">
-
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
+<div class="k-container k-page">
+    <div class="k-page-head">
         <div>
-            <div class="flex items-center group">
-                <a href="../dashboard.php" class="mr-4 bg-teal-50 p-3 rounded-2xl text-teal-600 hover:bg-teal-600 hover:text-white transition-all shadow-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7" />
-                    </svg>
-                </a>
-                <h1 class="text-5xl font-black text-gray-900 italic tracking-tight">
-                    Mi <span class="text-teal-600">Progreso</span>
-                </h1>
-            </div>
-            <p class="text-gray-500 font-medium mt-4 ml-16">Visualiza tu evolución y mantén el control de tus objetivos.</p>
+            <h1 class="k-title">Progreso</h1>
+            <p class="k-subtitle">Registra tu peso con regularidad: tus objetivos de calorías y macros se recalculan con él.</p>
         </div>
     </div>
 
-    <!-- SISTEMA DE FEEDBACK: Alertas de éxito o error al guardar mediciones -->
     <?php if ($message): ?>
-        <div class="mb-8 p-5 rounded-3xl font-bold text-center border-2 <?php echo $messageType === 'success' ? 'bg-teal-50 border-teal-100 text-teal-700' : 'bg-red-50 border-red-100 text-red-700'; ?>">
-            <?php echo htmlspecialchars($message); ?>
+        <div class="k-alert k-alert-<?= $messageType === 'success' ? 'ok' : 'error' ?> mb-6" role="alert">
+            <?= icono($messageType === 'success' ? 'check' : 'alert') ?><p><?= e($message) ?></p>
         </div>
     <?php endif; ?>
 
-    <!-- DASHBOARD DE GRÁFICAS: Se oculta por defecto hasta que JS procesa los datos -->
-    <div id="chartContainer" class="mb-10" style="display: none;">
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <!-- Gráfica Principal (Sparkline/Evolución) -->
-            <div class="lg:col-span-3 bg-white p-8 rounded-[2.5rem] shadow-sm border-2 border-gray-50">
-                <div class="h-72 relative">
-                    <!-- Canvas para Chart.js -->
-                    <canvas id="sparklineChart"></canvas>
-                </div>
-                <!-- Indicador de Tendencia: Calculado por JS para mostrar si el peso sube/baja -->
-                <div class="mt-6 pt-6 border-t border-gray-50 flex items-center justify-between">
-                    <div class="flex items-center">
-                        <span id="trendIcon" class="text-2xl mr-3"></span>
-                        <div>
-                            <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Tendencia actual</p>
-                            <p id="trendText" class="font-bold text-gray-700"></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CARDS DE ESTADÍSTICAS RÁPIDAS: Comparativa automática -->
-            <div class="flex flex-col gap-4">
-                <div class="bg-white p-6 rounded-[2rem] border-2 border-gray-50 flex-1 flex flex-col justify-center">
-                    <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Peso Inicial</p>
-                    <p id="statInicial" class="text-3xl font-black text-gray-900 mt-1"></p>
-                </div>
-                <div class="bg-white p-6 rounded-[2rem] border-2 border-teal-100 bg-teal-50/30 flex-1 flex flex-col justify-center">
-                    <p class="text-xs font-black text-teal-600 uppercase tracking-widest">Peso Actual</p>
-                    <p id="statActual" class="text-4xl font-black text-teal-600 mt-1"></p>
-                </div>
-                <div class="bg-white p-6 rounded-[2rem] border-2 border-gray-50 flex-1 flex flex-col justify-center">
-                    <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Cambio Total</p>
-                    <p id="statCambio" class="text-3xl font-black mt-1"></p>
-                </div>
-                <div class="bg-white p-6 rounded-[2rem] border-2 border-gray-50 flex-1 flex flex-col justify-center">
-                    <p class="text-xs font-black text-gray-400 uppercase tracking-widest">Cintura</p>
-                    <p id="statCinturaCambio" class="text-3xl font-black mt-1"></p>
-                </div>
-            </div>
+    <!-- RESUMEN -->
+    <div class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="k-card k-card-pad">
+            <p class="k-stat-label">Peso actual</p>
+            <p class="k-stat-value mt-1"><?= $pesoActual !== null ? $coma($pesoActual) : '—' ?><span class="k-stat-unit">kg</span></p>
+        </div>
+        <div class="k-card k-card-pad">
+            <p class="k-stat-label">Peso inicial</p>
+            <p class="k-stat-value mt-1"><?= $pesoInicial !== null ? $coma($pesoInicial) : '—' ?><span class="k-stat-unit">kg</span></p>
+        </div>
+        <div class="k-card k-card-pad">
+            <p class="k-stat-label">Cambio de peso</p>
+            <p class="k-stat-value mt-1 <?= $cambioPeso === null ? '' : ($cambioPeso <= 0 ? 'text-emerald-600' : 'text-amber-600') ?>"><?= $cambioPeso !== null ? $signo($cambioPeso) : '—' ?><span class="k-stat-unit">kg</span></p>
+        </div>
+        <div class="k-card k-card-pad">
+            <p class="k-stat-label">Cambio de cintura</p>
+            <p class="k-stat-value mt-1 <?= $cambioCintura === null ? '' : ($cambioCintura <= 0 ? 'text-emerald-600' : 'text-amber-600') ?>"><?= $cambioCintura !== null ? $signo($cambioCintura) : '—' ?><span class="k-stat-unit">cm</span></p>
         </div>
     </div>
 
-    <?php if (count($progresoData) < 2): ?>
-        <div class="bg-orange-50 p-8 rounded-[2.5rem] border-2 border-orange-100 text-center mb-10">
-            <p class="text-orange-600 font-bold text-lg">Registra al menos 2 días para activar tu gráfica de evolución.</p>
-        </div>
-    <?php endif; ?>
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+        <!-- GRÁFICO -->
+        <section class="k-card k-card-pad lg:col-span-2">
+            <h2 class="k-section-title">Evolución del peso</h2>
+            <?php if (count($pesos) >= 2): ?>
+                <div id="chartContainer" class="relative mt-4 h-64"><canvas id="sparklineChart" class="absolute inset-0" aria-label="Gráfico de la evolución del peso"></canvas></div>
+            <?php else: ?>
+                <div class="k-empty mt-4 py-10">
+                    <span class="k-empty-icon"><?= icono('activity') ?></span>
+                    <p class="text-sm k-muted">Con dos registros o más verás aquí tu evolución.</p>
+                </div>
+            <?php endif; ?>
+        </section>
 
-    <!-- FORMULARIO DE NUEVA MEDICIÓN: Diseño horizontal de 5 columnas -->
-    <div class="bg-white p-8 rounded-[2.5rem] shadow-sm border-2 border-gray-50 mb-12">
-        <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center italic">
-            <span class="bg-teal-600 text-white w-8 h-8 rounded-lg flex items-center justify-center mr-3 not-italic text-sm">+</span>
-            Nueva Medición
-        </h2>
-        <form method="POST" action="progreso.php" class="grid grid-cols-1 md:grid-cols-5 gap-6 items-end">
+        <!-- NUEVO REGISTRO -->
+        <form method="POST" action="progreso.php" class="k-card k-card-pad space-y-4">
             <?= campoCsrf() ?>
-            <input type="hidden" name="register_progreso" value="1">
-            
-            <div class="md:col-span-1">
-                <label class="block text-xs font-black text-gray-400 mb-2 ml-2 uppercase tracking-widest">Fecha</label>
-                <input type="date" name="fecha" required value="<?php echo date('Y-m-d'); ?>" class="w-full px-5 py-4 rounded-2xl border-2 border-gray-50 bg-gray-50/50 focus:bg-white focus:border-teal-500 transition-all outline-none font-bold text-gray-700">
+            <h2 class="k-section-title">Nuevo registro</h2>
+            <div>
+                <label for="fecha" class="k-label">Fecha</label>
+                <input type="date" id="fecha" name="fecha" required max="<?= date('Y-m-d') ?>" value="<?= date('Y-m-d') ?>" class="k-input">
             </div>
-            
-            <div class="md:col-span-1">
-                <label class="block text-xs font-black text-gray-400 mb-2 ml-2 uppercase tracking-widest">Peso (kg)</label>
-                <input type="number" step="0.1" name="peso_kg" placeholder="00.0" required class="w-full px-5 py-4 rounded-2xl border-2 border-gray-50 bg-gray-50/50 focus:bg-white focus:border-teal-500 transition-all outline-none font-bold text-gray-700">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="peso_kg" class="k-label">Peso (kg)</label>
+                    <input type="number" id="peso_kg" name="peso_kg" step="0.1" min="30" max="350" required inputmode="decimal" class="k-input" placeholder="<?= $pesoActual !== null ? e($coma($pesoActual)) : '70,0' ?>">
+                </div>
+                <div>
+                    <label for="cintura_cm" class="k-label">Cintura (cm)</label>
+                    <input type="number" id="cintura_cm" name="cintura_cm" step="0.1" min="40" max="250" inputmode="decimal" class="k-input" placeholder="Opcional">
+                </div>
             </div>
-            
-            <div class="md:col-span-1">
-                <label class="block text-xs font-black text-gray-400 mb-2 ml-2 uppercase tracking-widest">Cintura (cm)</label>
-                <input type="number" step="0.1" name="cintura_cm" placeholder="Opcional" class="w-full px-5 py-4 rounded-2xl border-2 border-gray-50 bg-gray-50/50 focus:bg-white focus:border-teal-500 transition-all outline-none font-bold text-gray-700">
+            <div>
+                <label for="nota" class="k-label">Nota <span class="font-normal k-muted">(opcional)</span></label>
+                <input type="text" id="nota" name="nota" maxlength="100" class="k-input" placeholder="Ej. semana con más entreno">
             </div>
-
-            <div class="md:col-span-1">
-                <label class="block text-xs font-black text-gray-400 mb-2 ml-2 uppercase tracking-widest">Nota</label>
-                <input type="text" name="nota" placeholder="¿Cómo te sientes?" class="w-full px-5 py-4 rounded-2xl border-2 border-gray-50 bg-gray-50/50 focus:bg-white focus:border-teal-500 transition-all outline-none font-bold text-gray-700">
-            </div>
-            
-            <button type="submit" class="bg-gray-900 hover:bg-teal-600 text-white px-6 py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg transform hover:scale-105 active:scale-95">
-                Guardar
-            </button>
+            <button type="submit" name="register_progreso" value="1" class="k-btn k-btn-primary w-full"><?= icono('plus') ?>Guardar registro</button>
         </form>
     </div>
 
-    <!-- HISTORIAL: Listado detallado con opción de borrado -->
-    <h2 class="text-3xl font-black text-gray-900 mb-8 italic">Historial <span class="text-teal-600">Completo</span></h2>
-    
-    <?php if (empty($progresoHistorial)): ?>
-        <div class="text-center py-12 bg-gray-50 rounded-[2.5rem] border-2 border-dashed border-gray-200">
-            <p class="text-gray-400 font-bold">No hay registros aún. ¡Comienza hoy!</p>
-        </div>
-    <?php else: ?>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <?php foreach ($progresoHistorial as $data): 
-                $f_date = function_exists('formatearFecha') ? formatearFecha($data['fecha']) : $data['fecha'];
-            ?>
-            <div class="bg-white p-6 rounded-[2rem] border-2 border-gray-50 flex justify-between items-center hover:border-teal-100 transition-all group shadow-sm">
-                <!-- Información de la entrada -->
-                <div class="flex items-center gap-5">
-                    <div class="bg-gray-50 p-3 rounded-2xl group-hover:bg-teal-50 transition-colors">
-                        <p class="text-[10px] font-black text-gray-400 uppercase leading-none mb-1">Día</p>
-                        <p class="font-bold text-gray-700"><?php echo htmlspecialchars($f_date); ?></p>
-                    </div>
-                    <div>
-                        <div class="flex items-baseline gap-2">
-                            <span class="text-2xl font-black text-gray-900"><?php echo number_format($data['peso_kg'], 1); ?></span>
-                            <span class="text-xs font-bold text-gray-400 uppercase">kg</span>
-                        </div>
-                        <?php if($data['cintura_cm']): ?>
-                            <p class="text-sm font-medium text-gray-400"><?php echo number_format($data['cintura_cm'], 1); ?> cm cintura</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                
-                <div class="flex items-center gap-3">
-                    <?php if($data['nota']): ?>
-                        <span class="hidden md:block text-xs bg-gray-50 text-gray-500 px-3 py-1 rounded-full font-bold max-w-[100px] truncate">
-                            <?php echo htmlspecialchars($data['nota']); ?>
-                        </span>
-                    <?php endif; ?>
-                    <!-- Acción de borrar: Usa data-attributes para pasar info al modal JS -->
-                    <button type="button" 
-                            class="btn-delete-progreso p-3 rounded-xl text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                            data-fecha="<?php echo htmlspecialchars($data['fecha']); ?>"
-                            data-display-fecha="<?php echo htmlspecialchars($f_date); ?>">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m3 0h3"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    <?php endif; ?>
-
-    <div class="mt-16 text-center">
-        <a href="../dashboard.php" class="inline-flex items-center font-black text-xs uppercase tracking-[0.2em] text-gray-400 hover:text-teal-600 transition-colors">
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
-            Volver al Panel
-        </a>
-    </div>
+    <!-- HISTORIAL -->
+    <section class="k-card mt-6 overflow-hidden">
+        <div class="k-card-head"><h2 class="k-section-title">Historial</h2><span class="text-sm k-muted"><?= count($progresoHistorial ?? []) ?> registros</span></div>
+        <?php if (empty($progresoHistorial)): ?>
+            <p class="px-6 py-5 text-sm k-muted">Aún no hay registros.</p>
+        <?php else: ?>
+            <table class="k-table">
+                <thead><tr><th>Fecha</th><th class="text-right">Peso</th><th class="hidden text-right sm:table-cell">Cintura</th><th class="hidden md:table-cell">Nota</th><th class="w-12"><span class="sr-only">Acciones</span></th></tr></thead>
+                <tbody>
+                    <?php foreach ($progresoHistorial as $registro):
+                        $fechaLegible = formatearFecha($registro['fecha']); ?>
+                        <tr>
+                            <td class="k-strong"><?= e($fechaLegible) ?></td>
+                            <td class="text-right font-medium tabular-nums k-strong"><?= $coma($registro['peso_kg']) ?> kg</td>
+                            <td class="hidden text-right tabular-nums sm:table-cell"><?= $registro['cintura_cm'] ? $coma($registro['cintura_cm']) . ' cm' : '<span class="k-muted">—</span>' ?></td>
+                            <td class="hidden max-w-xs truncate text-sm md:table-cell k-muted"><?= e($registro['nota'] ?? '') ?></td>
+                            <td class="text-right">
+                                <button type="button" class="btn-delete-progreso k-btn k-btn-ghost k-btn-icon k-btn-danger-text"
+                                        data-fecha="<?= e($registro['fecha']) ?>" data-display-fecha="<?= e($fechaLegible) ?>"
+                                        aria-label="Eliminar el registro del <?= e($fechaLegible) ?>"><?= icono('trash') ?></button>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </section>
 </div>
 
-<!-- MODAL DE ELIMINACIÓN -->
-<div id="deleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity duration-300 opacity-0 pointer-events-none">
-    <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-sm transform scale-95 transition-transform duration-300 border-2 border-gray-50 shadow-2xl">
-        <div class="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-6 mx-auto">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.39 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+<!-- MODAL: ELIMINAR REGISTRO -->
+<div id="deleteModal" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloBorrarRegistro">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="progreso.php" id="deleteFormModal" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="delete_fecha" id="modalFechaInput">
+        <h2 id="tituloBorrarRegistro" class="k-modal-title">¿Eliminar el registro del <span id="modalFechaDisplay"></span>?</h2>
+        <p class="mt-2 text-sm k-muted">Tu peso del perfil pasará a ser el del registro anterior.</p>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" id="cancelDeleteBtn" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-danger">Eliminar</button>
         </div>
-        <h3 class="text-xl font-black text-gray-900 mb-2 text-center">¿Eliminar registro?</h3>
-        <p class="text-gray-500 text-center mb-8 font-medium">Vas a borrar los datos del <span id="modalFechaDisplay" class="text-gray-900 font-bold"></span>.</p>
-        
-        <form method="POST" action="progreso.php" id="deleteFormModal" class="flex flex-col gap-3">
-            <?= campoCsrf() ?>
-            <input type="hidden" name="delete_fecha" id="modalFechaInput">
-            <button type="submit" class="w-full py-4 bg-red-500 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-100">Sí, eliminar</button>
-            <button type="button" id="cancelDeleteBtn" class="w-full py-4 bg-gray-50 text-gray-400 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-gray-100 transition-all">Cancelar</button>
-        </form>
-    </div>
+    </form>
 </div>
 
-<!-- DATA BRIDGE: Pasa los datos de PHP a JavaScript -->
 <script>
-    window.progresoData = <?php echo $jsProgresoData; ?>;
+    // Registros para el gráfico (main.js)
+    window.progresoData = <?= $jsProgresoData ?>;
 </script>
 
-<?php 
-// Incluir el pie de página
-include_once __DIR__ . '/../templates/footer.php';
-?>
+<?php include_once __DIR__ . '/../templates/footer.php'; ?>

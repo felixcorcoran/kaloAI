@@ -5,7 +5,7 @@
  * el TDEE (Gasto Energético Total) y el reparto de macros según el objetivo.
  */
 
-$pageTitle = "KaloAI | Mi Perfil y Objetivos";
+$pageTitle = "KaloAI | Mi perfil";
 
 session_start();
 
@@ -289,206 +289,155 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' || !empty($errors)) {
 include_once __DIR__ . '/../templates/header.php'; 
 ?>
 
-<!-- CONTENEDOR PRINCIPAL: Configuración de Biometría y Metas -->
-<div class="container mx-auto px-4 py-8">
-    
-    <!-- ENCABEZADO DINÁMICO: Cambia entre "Crear" o "Editar" según el estado de la BD -->
-    <div class="mb-10">
-        <div class="flex items-center group">
-            <a href="../dashboard.php" class="mr-4 bg-teal-50 p-3 rounded-2xl text-teal-600 hover:bg-teal-600 hover:text-white transition-all shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7" />
-                </svg>
-            </a>
-            <h1 class="text-5xl font-black text-gray-900 italic tracking-tight">
-                <p class=" transition-colors">
-                    <?php echo $profileData ? 'Editar' : 'Crear'; ?> <span class="text-teal-600">Perfil</span>
-                </p>
-            </h1>
+<?php
+$tieneObjetivos = ($profileData['tdee_calorias'] ?? 0) > 0 && empty($errors);
+$netas = (int) ($profileData['calorias_netas_objetivo'] ?? 0);
+$macrosPerfil = [
+    ['k-macro-p', 'Proteína', (int) ($profileData['proteinas_objetivo_g'] ?? 0), 4],
+    ['k-macro-c', 'Carbohidratos', (int) ($profileData['carbohidratos_objetivo_g'] ?? 0), 4],
+    ['k-macro-f', 'Grasa', (int) ($profileData['grasas_objetivo_g'] ?? 0), 9],
+];
+$fechaNac = $profileData['fecha_nacimiento'] ?? '';
+if ($fechaNac === '0000-00-00') $fechaNac = '';
+?>
+
+<div class="k-container k-page max-w-4xl">
+    <div class="k-page-head">
+        <div>
+            <h1 class="k-title">Tu perfil</h1>
+            <p class="k-subtitle">Con estos datos KaloAI calcula tus calorías y macros diarios, y la IA evita lo que no puedes comer.</p>
         </div>
-        <p class="text-gray-500 font-medium mt-4 ml-16">Configura tu biometría y metas para que KaloAI calcule tu plan ideal.</p>
     </div>
 
-    <!-- FEEDBACK DE ESTADO: Mensajes de éxito o error tras el POST -->
     <?php if ($message): ?>
-        <div class="mb-8 p-5 rounded-[2rem] font-bold border-2 text-center <?php echo $messageType === 'success' ? 'bg-teal-50 border-teal-100 text-teal-700' : 'bg-red-50 border-red-100 text-red-700'; ?> shadow-sm">
-            <?php echo $message; ?>
+        <div class="k-alert k-alert-<?= $messageType === 'success' ? (($profileData['tdee_calorias'] ?? 0) > 0 ? 'ok' : 'info') : 'error' ?> mb-6" role="alert">
+            <?= icono($messageType === 'success' ? 'check' : 'alert') ?>
+            <div><?= $message /* textos fijos; los errores ya vienen escapados */ ?></div>
         </div>
     <?php endif; ?>
 
-    <!-- WIDGET DE RESULTADOS (SOLO SI HAY DATOS): Muestra el cálculo de la IA -->
-    <?php if (($profileData['tdee_calorias'] ?? 0) > 0 && empty($errors)): ?>
-    <div class="mb-8 bg-white p-8 md:p-10 rounded-[2.5rem] shadow-xl border border-gray-100 relative overflow-hidden">
-        <h2 class="text-2xl font-black text-gray-800 mb-8 flex items-center italic">
-            <span class="bg-blue-50 p-3 rounded-2xl mr-4">📊</span> Tu Objetivo de Nutrición
-        </h2>
-
-        <!-- Resumen de Energía: Comparativa entre Mantenimiento (TDEE) y Objetivo (Déficit/Superávit) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-green-50 p-6 rounded-[2rem] border border-green-100 text-center">
-                <p class="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">TDEE Estimado</p>
-                <p class="text-4xl font-black text-green-900 italic">
-                    <?php echo htmlspecialchars($profileData['tdee_calorias'] ?? 'N/A'); ?> 
-                    <span class="text-sm font-bold text-green-600">kcal</span>
-                </p>
+    <?php if ($tieneObjetivos): ?>
+        <!-- OBJETIVOS CALCULADOS -->
+        <section class="k-card k-card-pad mb-6">
+            <div class="flex flex-col gap-6 sm:flex-row sm:items-center">
+                <div class="sm:w-56">
+                    <p class="k-stat-label">Tu objetivo diario</p>
+                    <p class="mt-1 font-display text-4xl font-bold tracking-tight tabular-nums k-strong"><?= number_format($netas, 0, ',', '.') ?><span class="k-stat-unit">kcal</span></p>
+                    <p class="mt-1 text-xs k-muted">Mantenimiento (TDEE): <?= number_format((int) $profileData['tdee_calorias'], 0, ',', '.') ?> kcal</p>
+                </div>
+                <div class="flex-1">
+                    <div class="flex h-2.5 overflow-hidden rounded-full" style="background-color: var(--k-surface-2);">
+                        <?php foreach ($macrosPerfil as [$clase, , $gramos, $kcalG]): ?>
+                            <span class="<?= $clase ?> k-macro-bar block h-full" style="width: <?= $netas ? round($gramos * $kcalG / $netas * 100, 1) : 0 ?>%"></span>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="mt-4 grid grid-cols-3 gap-2">
+                        <?php foreach ($macrosPerfil as [$clase, $etiqueta, $gramos]): ?>
+                            <div class="k-macro-chip <?= $clase ?>">
+                                <p class="k-stat-label flex items-center gap-1.5"><span class="k-macro-dot h-2 w-2"></span><?= $etiqueta ?></p>
+                                <p class="font-display text-lg font-bold tabular-nums k-strong"><?= $gramos ?><span class="k-stat-unit">g</span></p>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
             </div>
-            <div class="bg-blue-600 p-6 rounded-[2rem] text-center shadow-lg shadow-blue-100">
-                <p class="text-[10px] font-black text-blue-100 uppercase tracking-widest mb-1">Calorías Objetivo</p>
-                <p class="text-4xl font-black text-white italic">
-                    <?php echo htmlspecialchars($profileData['calorias_netas_objetivo'] ?? 'N/A'); ?> 
-                    <span class="text-sm font-bold text-blue-200">kcal</span>
-                </p>
-            </div>
-        </div>
-
-        <!-- BARRA DE MACRONUTRIENTES: Visualización porcentual de Proteínas, Carbos y Grasas -->
-        <?php
-            $prote = $profileData['proteinas_objetivo_g'] ?? 0;
-            $carbs = $profileData['carbohidratos_objetivo_g'] ?? 0;
-            $gras = $profileData['grasas_objetivo_g'] ?? 0;
-            $total = max(1, $prote + $carbs + $gras);
-            $wProte = ($prote / $total) * 100;
-            $wCarbs = ($carbs / $total) * 100;
-            $wGras = ($gras / $total) * 100;
-        ?>
-        <div class="flex w-full h-24 overflow-hidden rounded-[1.5rem] shadow-inner bg-gray-100 mb-4">
-            <div class="flex flex-col justify-center items-center text-white" style="width: <?php echo $wProte; ?>%; background-color: #3b82f6;">
-                <span class="text-[10px] font-black uppercase opacity-70">Proteínas</span>
-                <span class="text-2xl font-black italic"><?php echo round($prote); ?>g</span>
-            </div>
-            <div class="flex flex-col justify-center items-center text-white" style="width: <?php echo $wCarbs; ?>%; background-color: #fbbf24;">
-                <span class="text-[10px] font-black uppercase opacity-70">Carbos</span>
-                <span class="text-2xl font-black italic"><?php echo round($carbs); ?>g</span>
-            </div>
-            <div class="flex flex-col justify-center items-center text-white" style="width: <?php echo $wGras; ?>%; background-color: #f97316;">
-                <span class="text-[10px] font-black uppercase opacity-70">Grasas</span>
-                <span class="text-2xl font-black italic"><?php echo round($gras); ?>g</span>
-            </div>
-        </div>
-    </div>
+        </section>
     <?php endif; ?>
 
-    <!-- FORMULARIO DE PERFIL -->
-    <form method="POST" id="profileForm" action="perfil.php" class="space-y-8">
+    <form method="POST" id="profileForm" action="perfil.php" class="space-y-6">
         <?= campoCsrf() ?>
-        <!-- Campo Oculto: Almacena las restricciones como JSON para procesarlas en el Backend -->
-        <input type="hidden" name="restricciones_json" id="restricciones_json" value='<?php echo json_html($currentRestrictions); ?>'>
+        <input type="hidden" name="restricciones_json" id="restricciones_json" value='<?= json_html($currentRestrictions) ?>'>
 
-        <!-- SECCIÓN 1: Datos Fisiológicos -->
-        <div class="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-sm border-2 border-gray-50">
-            <h2 class="text-2xl font-bold text-gray-800 mb-8 flex items-center italic tracking-tight">
-                <span class="bg-teal-50 p-3 rounded-2xl mr-4">🧬</span> Datos Personales
-            </h2>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="space-y-2">
-                    <label for="nombre" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Nombre Completo</label>
-                    <input id="nombre" name="nombre" type="text" required class="w-full p-5 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-200 outline-none transition-all font-bold text-gray-700" value="<?php echo htmlspecialchars($profileData['nombre'] ?? ''); ?>">
+        <!-- DATOS PERSONALES -->
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Datos personales</h2>
+            <div class="mt-5 grid gap-5 sm:grid-cols-2">
+                <div class="sm:col-span-2">
+                    <label for="nombre" class="k-label">Nombre</label>
+                    <input id="nombre" name="nombre" type="text" required maxlength="50" class="k-input" value="<?= e($profileData['nombre'] ?? '') ?>">
                 </div>
-                <div class="space-y-2">
-                    <label for="fecha_nacimiento" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Fecha de Nacimiento</label>
-                    <input id="fecha_nacimiento" name="fecha_nacimiento" type="date" required class="w-full p-5 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-200 outline-none transition-all font-bold text-gray-700 uppercase" value="<?php echo htmlspecialchars($profileData['fecha_nacimiento'] ?? ''); ?>">
+                <div>
+                    <label for="fecha_nacimiento" class="k-label">Fecha de nacimiento</label>
+                    <input id="fecha_nacimiento" name="fecha_nacimiento" type="date" required class="k-input" value="<?= e($fechaNac) ?>">
                 </div>
-                <!-- Género y Altura con el mismo estilo minimalista -->
-                <div class="space-y-2">
-                    <label for="genero" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Género</label>
-                    <select id="genero" name="genero" required class="w-full p-5 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-200 outline-none transition-all font-bold text-gray-700">
-                        <option value="">Selecciona</option>
-                        <option value="M" <?php echo ($profileData['genero'] ?? '') === 'M' ? 'selected' : ''; ?>>Masculino</option>
-                        <option value="F" <?php echo ($profileData['genero'] ?? '') === 'F' ? 'selected' : ''; ?>>Femenino</option>
+                <div>
+                    <label for="genero" class="k-label">Sexo <span class="font-normal k-muted">(para la fórmula)</span></label>
+                    <select id="genero" name="genero" required class="k-input">
+                        <option value="" disabled <?= empty($profileData['genero']) ? 'selected' : '' ?>>Elige…</option>
+                        <option value="F" <?= ($profileData['genero'] ?? '') === 'F' ? 'selected' : '' ?>>Mujer</option>
+                        <option value="M" <?= ($profileData['genero'] ?? '') === 'M' ? 'selected' : '' ?>>Hombre</option>
                     </select>
                 </div>
-                <div class="space-y-2">
-                    <label for="altura_cm" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Altura (cm)</label>
-                    <input id="altura_cm" name="altura_cm" type="number" step="1" required class="w-full p-5 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-200 outline-none transition-all font-bold text-gray-700" value="<?php echo htmlspecialchars($profileData['altura_cm'] ?? ''); ?>">
+                <div>
+                    <label for="altura_cm" class="k-label">Altura (cm)</label>
+                    <input id="altura_cm" name="altura_cm" type="number" step="1" min="100" max="250" required inputmode="numeric" class="k-input" value="<?= e($profileData['altura_cm'] ?? '') ?>">
                 </div>
-                <div class="md:col-span-2 space-y-2">
-                    <label for="peso_kg" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Peso Actual (kg)</label>
-                    <input id="peso_kg" name="peso_kg" type="number" step="0.1" required class="w-full p-6 rounded-2xl border-2 border-teal-50 bg-teal-50/30 focus:bg-white focus:border-teal-200 outline-none transition-all font-black text-teal-600 text-3xl text-center" value="<?php echo htmlspecialchars($profileData['peso_kg'] ?? ''); ?>">
+                <div>
+                    <label for="peso_kg" class="k-label">Peso (kg)</label>
+                    <input id="peso_kg" name="peso_kg" type="number" step="0.1" min="30" max="350" required inputmode="decimal" class="k-input" value="<?= e($profileData['peso_kg'] ?? '') ?>">
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- SECCIÓN 2: Estilo de vida y Metas -->
-        <div class="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-sm border-2 border-gray-50">
-            <h2 class="text-2xl font-bold text-gray-800 mb-8 flex items-center italic tracking-tight">
-                <span class="bg-teal-50 p-3 rounded-2xl mr-4">🎯</span> Metas y Actividad
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="space-y-2">
-                    <label for="nivel_actividad" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Nivel de Actividad Física</label>
-                    <select id="nivel_actividad" name="nivel_actividad" required class="w-full p-5 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-200 outline-none transition-all font-bold text-gray-700">
+        <!-- ACTIVIDAD Y OBJETIVO -->
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Actividad y objetivo</h2>
+            <div class="mt-5 grid gap-5 sm:grid-cols-2">
+                <div>
+                    <label for="nivel_actividad" class="k-label">Nivel de actividad</label>
+                    <select id="nivel_actividad" name="nivel_actividad" required class="k-input">
                         <?php foreach ($nivelesActividad as $key => $value): ?>
-                            <option value="<?php echo $key; ?>" <?php echo ($profileData['nivel_actividad'] ?? '') === $key ? 'selected' : ''; ?>><?php echo $value; ?></option>
+                            <option value="<?= e($key) ?>" <?= ($profileData['nivel_actividad'] ?? '') === $key ? 'selected' : '' ?>><?= e($value) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="space-y-2">
-                    <label for="objetivo" class="block text-xs font-black text-gray-400 uppercase tracking-widest ml-2">Objetivo Principal</label>
-                    <select id="objetivo" name="objetivo" required class="w-full p-5 rounded-2xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-teal-200 outline-none transition-all font-black text-teal-600">
+                <div>
+                    <label for="objetivo" class="k-label">Objetivo</label>
+                    <select id="objetivo" name="objetivo" required class="k-input">
                         <?php foreach ($objetivos as $key => $value): ?>
-                            <option value="<?php echo $key; ?>" <?php echo ($profileData['objetivo'] ?? '') === $key ? 'selected' : ''; ?>><?php echo $value; ?></option>
+                            <option value="<?= e($key) ?>" <?= ($profileData['objetivo'] ?? 'mantenimiento') === $key ? 'selected' : '' ?>><?= e($value) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- SECCIÓN 3: Restricciones -->
-        <div class="bg-gray-900 p-8 md:p-10 rounded-[2.5rem] shadow-xl text-white border-b-8 border-red-500">
-            <h2 class="text-2xl font-bold mb-4 flex items-center italic tracking-tight">
-                <span class="text-3xl mr-3">🚫</span> Restricciones Alimentarias
-            </h2>
-            <!-- Agregador de Restricciones Dinámico -->
-            <div class="flex flex-col sm:flex-row gap-4 mb-10">
-                <div class="flex-grow">
-                    <input id="nuevo_ingrediente" type="text" placeholder="Ej: Lactosa..." class="w-full p-5 rounded-2xl bg-white/10 border border-white/10 focus:border-red-400 outline-none text-white font-bold transition-all">
+        <!-- ALERGIAS E INTOLERANCIAS -->
+        <section class="k-card k-card-pad">
+            <div class="flex items-start gap-3">
+                <span class="k-icon-tile" style="background-color: var(--k-danger-soft); color: var(--k-danger);"><?= icono('ban') ?></span>
+                <div>
+                    <h2 class="k-section-title">Alergias, intolerancias y preferencias</h2>
+                    <p class="text-sm k-muted">La IA nunca usará estos alimentos, y KaloAI descarta cualquier receta que los incluya.</p>
                 </div>
-                <div class="sm:w-64">
-                    <select id="new_tipo" class="w-full p-5 rounded-2xl bg-white/10 border border-white/10 text-white font-bold outline-none">
-                        <?php foreach ($tiposRestriccion as $key => $value): ?>
-                            <option value="<?php echo $key; ?>" class="text-gray-900 font-bold"><?php echo $value; ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <button type="button" id="agregarRestriccionBtn" class="px-8 py-5 bg-red-600 hover:bg-red-500 text-white font-black rounded-2xl transition-all uppercase tracking-widest text-xs">
-                    Añadir
-                </button>
             </div>
-            <!-- Lista de restricciones añadidas (renderizadas por JS o PHP inicial) -->
-            <div class="pt-8 border-t border-white/10">
-                <ul id="restrictionsList" class="space-y-3">
-                    <?php if (empty($currentRestrictions)): ?>
-                        <li class="text-sm text-gray-500 italic text-center py-4" id="emptyMessage">Sin restricciones añadidas.</li>
-                    <?php endif; ?>
-                </ul>
+            <div class="mt-5 flex flex-col gap-2 sm:flex-row">
+                <label for="nuevo_ingrediente" class="sr-only">Alimento</label>
+                <input type="text" id="nuevo_ingrediente" maxlength="200" class="k-input flex-1" placeholder="Ej. cacahuete, lactosa, marisco…">
+                <label for="new_tipo" class="sr-only">Tipo</label>
+                <select id="new_tipo" class="k-input sm:w-56">
+                    <?php foreach ($tiposRestriccion as $key => $value): ?>
+                        <option value="<?= e($key) ?>"><?= e($value) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="button" id="agregarRestriccionBtn" class="k-btn k-btn-secondary h-11"><?= icono('plus') ?>Añadir</button>
             </div>
-        </div>
+            <p id="restriccionAviso" class="mt-2 text-sm text-red-600" hidden></p>
+            <ul id="restrictionsList" class="k-list mt-3"></ul>
+        </section>
 
-        <!-- BOTÓN DE ACCIÓN FINAL -->
-        <div class="pt-4 pb-12">
-            <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-black py-8 rounded-[2.5rem] shadow-2xl transition-all transform hover:scale-[1.02] uppercase tracking-[0.2em]">
-                GUARDAR PERFIL Y ACTUALIZAR
-            </button>
+        <div class="flex justify-end">
+            <button type="submit" class="k-btn k-btn-primary k-btn-lg"><?= icono('check') ?>Guardar y recalcular</button>
         </div>
     </form>
-    <div class="mt-16 text-center">
-        <a href="../dashboard.php" class="inline-flex items-center font-black text-xs uppercase tracking-[0.2em] text-gray-400 hover:text-teal-600 transition-colors">
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
-            Volver al Panel
-        </a>
-    </div>
 </div>
 
-<!-- DATA BRIDGE: Pasa los datos de PHP a JavaScript -->
 <script>
+    // Datos para la lista de restricciones (main.js)
     window.profileData = {
-        tipoMap: <?php echo json_html($tiposRestriccion); ?>,
-        currentRestrictions: <?php echo json_html($currentRestrictions); ?>
+        tipoMap: <?= json_html($tiposRestriccion) ?>,
+        currentRestrictions: <?= json_html($currentRestrictions) ?>
     };
 </script>
 
-<?php
-// Incluir el pie de página
-include_once __DIR__ . '/../templates/footer.php'; 
-?>
+<?php include_once __DIR__ . '/../templates/footer.php'; ?>

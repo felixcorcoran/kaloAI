@@ -7,7 +7,7 @@
 
 // Configuración de la vista y metadatos
 $isAuth = true; 
-$pageTitle = "KaloAI | Registro de Usuario";
+$pageTitle = "KaloAI | Crear cuenta";
 $message = ''; 
 $messageType = 'success'; 
 
@@ -113,78 +113,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 include_once __DIR__ . '/../templates/header.php'; 
 ?>
 
-<!-- CONTENEDOR DE REGISTRO: Centrado total para enfoque en la conversión -->
-<div class="container mx-auto px-6 py-12 flex justify-center items-center min-h-[80vh]">
-    <div class="w-full max-w-md bg-white p-10 rounded-[2.5rem] shadow-xl shadow-gray-100 border border-gray-50">
-        
-        <!-- ENCABEZADO: Título aspiracional y subtítulo de marca -->
-        <div class="text-center mb-10">
-            <h2 class="text-4xl font-black text-gray-900 italic tracking-tighter">Únete a <span class="text-teal-600">KaloAI</span></h2>
-            <p class="text-gray-400 text-xs font-bold uppercase tracking-widest mt-2">Tu nutrición inteligente comienza aquí</p>
+<div class="k-container flex min-h-[calc(100vh-12rem)] items-center justify-center py-12">
+    <div class="w-full max-w-md">
+        <div class="mb-8 text-center">
+            <h1 class="font-display text-2xl font-bold tracking-tight text-gray-900">Crea tu cuenta</h1>
+            <p class="mt-1 text-sm text-gray-500">Gratis. Luego completas tu perfil y KaloAI calcula tus objetivos.</p>
         </div>
-        
-        <!-- FEEDBACK DINÁMICO: Alertas de éxito o error (ej. email duplicado o contraseñas no coincidentes) -->
+
         <?php if ($message): ?>
-            <div class="p-4 mb-6 rounded-2xl text-sm font-medium animate-fade-in <?php echo $messageType === 'success' ? 'bg-teal-50 text-teal-700 border border-teal-100' : 'bg-red-50 text-red-700 border border-red-100'; ?>">
-                <?php echo $message; ?>
+            <div class="k-alert k-alert-<?= $messageType === 'success' ? 'ok' : 'error' ?> mb-4" role="alert">
+                <?= icono($messageType === 'success' ? 'check' : 'alert') ?>
+                <div><?= $message /* texto fijo o errores ya escapados */ ?>
+                    <?php if ($messageType === 'success'): ?> <a href="login.php" class="font-semibold underline">Entrar</a><?php endif; ?>
+                </div>
             </div>
         <?php endif; ?>
 
-        <!-- FORMULARIO DE ALTA: Captura de nuevos perfiles -->
-        <form method="POST" action="registro.php" class="space-y-5">
+        <form method="POST" action="registro.php" class="k-card k-card-pad space-y-4">
             <?= campoCsrf() ?>
             <div>
-                <label for="nombre" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-2">Nombre Completo</label>
-                <input id="nombre" name="nombre" type="text" required 
-                       class="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 font-medium focus:ring-2 focus:ring-teal-500 transition-all"
-                       placeholder="Ej. Juan Pérez"
-                       value="<?php echo htmlspecialchars($nombre ?? ''); ?>">
+                <label for="nombre" class="k-label">Nombre</label>
+                <input id="nombre" name="nombre" type="text" required maxlength="50" autocomplete="name" class="k-input" value="<?= e($nombre ?? '') ?>">
             </div>
-            
             <div>
-                <label for="email" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-2">Email</label>
-                <input id="email" name="email" type="email" required 
-                       class="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 font-medium focus:ring-2 focus:ring-teal-500 transition-all"
-                       placeholder="correo@ejemplo.com"
-                       value="<?php echo htmlspecialchars($email ?? ''); ?>">
+                <label for="email" class="k-label">Correo electrónico</label>
+                <input id="email" name="email" type="email" required autocomplete="email" class="k-input" placeholder="nombre@correo.com" value="<?= e($email ?? '') ?>">
             </div>
-            
-            <!-- SEGURIDAD: Doble validación de contraseña en grid responsivo -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid gap-4 sm:grid-cols-2">
                 <div>
-                    <label for="password" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-2">Contraseña</label>
-                    <input id="password" name="password" type="password" required 
-                           class="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 font-medium focus:ring-2 focus:ring-teal-500 transition-all"
-                           placeholder="••••••••">
+                    <label for="password" class="k-label">Contraseña</label>
+                    <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" class="k-input">
                 </div>
                 <div>
-                    <label for="password_confirm" class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-2">Confirmar</label>
-                    <input id="password_confirm" name="password_confirm" type="password" required 
-                           class="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 font-medium focus:ring-2 focus:ring-teal-500 transition-all"
-                           placeholder="••••••••">
+                    <label for="password_confirm" class="k-label">Repítela</label>
+                    <input id="password_confirm" name="password_confirm" type="password" required minlength="8" autocomplete="new-password" class="k-input">
                 </div>
             </div>
-
-            <!-- SEGURIDAD: Doble validación de contraseña en grid responsivo -->
-            <div class="pt-4">
-                <button type="submit"
-                        class="w-full bg-teal-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-teal-100 hover:bg-teal-700 hover:-translate-y-1 transition-all uppercase text-xs tracking-widest">
-                    Crear mi cuenta
-                </button>
-            </div>
+            <p class="k-hint !mt-1">Mínimo 8 caracteres.</p>
+            <button type="submit" class="k-btn k-btn-primary w-full">Crear cuenta</button>
+            <p class="text-center text-xs text-gray-500">Al registrarte aceptas la <a href="<?= BASE_URL ?>public/privacidad.php" class="underline">política de privacidad</a>.</p>
         </form>
 
-        <!-- FOOTER DEL FORMULARIO: Redirect para usuarios ya existentes -->
-        <div class="mt-10 text-center border-t border-gray-50 pt-6">
-            <p class="text-sm text-gray-500 font-medium">
-                ¿Ya eres miembro? 
-                <a href="login.php" class="text-teal-600 font-bold hover:underline ml-1">Entrar ahora</a>
-            </p>
-        </div>
+        <p class="mt-6 text-center text-sm text-gray-500">
+            ¿Ya tienes cuenta? <a href="login.php" class="font-semibold text-teal-700 hover:underline">Entra</a>
+        </p>
     </div>
 </div>
 
-<?php 
-// Incluir el pie de página
-include_once __DIR__ . '/../templates/footer.php'; 
-?>
+<?php include_once __DIR__ . '/../templates/footer.php'; ?>

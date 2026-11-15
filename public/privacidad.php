@@ -13,73 +13,45 @@ require_once __DIR__ . '/../core/utilidades.php';
 include_once __DIR__ . '/../views/templates/header.php'; 
 ?>
 
-<!-- HERO SECTION: Cabecera temática con énfasis en el concepto de Privacidad -->
-<section class="bg-teal-50 py-24">
-    <div class="container mx-auto px-6 text-center">
-        <h1 class="text-5xl md:text-7xl font-extrabold text-gray-900 mb-6">Privacidad de <span class="text-teal-600">Datos.</span></h1>
+<div class="k-container max-w-3xl py-12 sm:py-16">
+    <p class="k-eyebrow">Legal</p>
+    <h1 class="mt-2 font-display text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Privacidad de tus datos</h1>
+    <p class="mt-4 text-lg leading-relaxed text-gray-600">
+        Tu información de salud y alimentación es muy personal. Aquí explicamos qué datos guarda KaloAI, para qué los usa y cómo puedes pedir que se borren.
+    </p>
+
+    <div class="mt-10 space-y-6">
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Qué datos guardamos</h2>
+            <ul class="mt-4 grid gap-4 sm:grid-cols-2">
+                <li class="k-subtle rounded-xl p-4">
+                    <p class="font-medium text-gray-900">Cuenta</p>
+                    <p class="mt-1 text-sm text-gray-600">Nombre, correo y contraseña. La contraseña se guarda cifrada con un hash: nadie puede leerla.</p>
+                </li>
+                <li class="k-subtle rounded-xl p-4">
+                    <p class="font-medium text-gray-900">Perfil nutricional</p>
+                    <p class="mt-1 text-sm text-gray-600">Fecha de nacimiento, altura, peso, actividad, objetivo, alergias e intolerancias, recetas, plan, despensa y progreso.</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Cómo usamos la inteligencia artificial</h2>
+            <p class="mt-3 text-sm leading-relaxed text-gray-600">
+                Para crear una receta, KaloAI envía a Google Gemini tu objetivo de calorías y macros, los ingredientes de tu despensa y los alimentos que no puedes tomar.
+                <strong class="text-gray-900">No se envían tu nombre ni tu correo.</strong> No vendemos tus datos ni los cedemos con fines comerciales.
+            </p>
+        </section>
+
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Tus derechos</h2>
+            <p class="mt-3 text-sm leading-relaxed text-gray-600">
+                Según el RGPD puedes acceder a tus datos, corregirlos o pedir que se eliminen. Los de tu perfil los puedes corregir tú desde la aplicación;
+                para borrar la cuenta y todos sus datos, escríbenos y lo hacemos.
+            </p>
+            <a href="contacto.php" class="k-btn k-btn-secondary mt-5">Pedir la eliminación de mis datos <?= icono('arrow-right') ?></a>
+        </section>
     </div>
-</section>
+</div>
 
-<section class="py-20 bg-white">
-    <div class="container mx-auto px-6 max-w-4xl">
-        <div class="prose prose-teal prose-xl max-w-none space-y-16">
-            
-            <!-- BLOQUE INFORMATIVO: Introducción y compromiso de la marca -->
-            <div class="bg-gray-50 p-10 rounded-[3rem] border border-gray-100">
-                <h2 class="text-3xl font-black text-gray-900 mb-6">1. Tu privacidad es prioridad</h2>
-                <p class="text-gray-600 leading-relaxed">
-                    En <strong>KaloAI</strong>, entendemos que tu información nutricional y de salud es extremadamente personal. Esta política explica cómo recopilamos, usamos y protegemos tus datos cuando utilizas nuestra plataforma de planificación alimentaria.
-                </p>
-            </div>
-
-            <!-- GRID DE CATEGORÍAS: Clasificación de los datos capturados por el sistema -->
-            <div>
-                <h2 class="text-3xl font-black text-gray-900 mb-8 flex items-center gap-4">
-                    <span class="bg-teal-600 text-white h-10 w-10 flex items-center justify-center rounded-full text-lg font-bold">2</span>
-                    Datos que Recopilamos
-                </h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="p-8 border border-teal-100 rounded-3xl bg-white">
-                        <h4 class="font-bold text-teal-900 mb-2">Información de Cuenta</h4>
-                        <p class="text-sm text-gray-600">Nombre, correo electrónico y contraseña encriptada para el acceso seguro.</p>
-                    </div>
-                    <div class="p-8 border border-teal-100 rounded-3xl bg-white">
-                        <h4 class="font-bold text-teal-900 mb-2">Perfil Nutricional</h4>
-                        <p class="text-sm text-gray-600">Objetivos calóricos, preferencias dietéticas e intolerancias necesarias para la IA.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- DESTACADO IA: Explicación del procesamiento algorítmico y ética de datos -->
-            <div class="bg-teal-900 p-12 rounded-[3rem] text-white shadow-2xl">
-                <h2 class="text-3xl font-black mb-6">3. Uso de Inteligencia Artificial</h2>
-                <p class="text-teal-100 leading-relaxed mb-6">
-                    Tus datos son procesados por nuestros algoritmos de IA únicamente para generar tus planes personalizados. <strong>No vendemos tus datos</strong> a empresas de marketing ni a terceros.
-                </p>
-                <div class="flex items-center gap-3 text-teal-400 font-bold italic">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Seguridad Punto a Punto
-                </div>
-            </div>
-
-            <!-- MARCO LEGAL: Derechos del usuario (RGPD) y acciones disponibles -->
-            <div>
-                <h2 class="text-3xl font-black text-gray-900 mb-6">4. Tus Derechos</h2>
-                <p class="text-gray-600 leading-relaxed mb-8">
-                    De acuerdo con el RGPD, tienes derecho a acceder, rectificar o eliminar tus datos en cualquier momento desde tu panel de configuración o contactándonos directamente.
-                </p>
-                <a href="contacto.php" class="text-teal-600 font-black uppercase tracking-widest text-xs hover:underline">
-                    Solicitar eliminación de datos &rarr;
-                </a>
-            </div>
-
-        </div>
-    </div>
-</section>
-
-<?php 
-// Incluir el pie de página
-include_once __DIR__ . '/../views/templates/footer.php'; 
-?>
+<?php include_once __DIR__ . '/../views/templates/footer.php'; ?>

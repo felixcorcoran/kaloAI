@@ -1,20 +1,22 @@
 /**
- * KaloAI - Scripts Principales de Gestión
- * ---------------------------------------
- * Este archivo centraliza las funciones interactivas: administración,
- * planificación nutricional, gestión de inventario y recetas.
+ * KaloAI · JavaScript de la web
+ *
+ * No depende de clases de estilo: los elementos se buscan por id o por
+ * atributos data-*, así que cambiar el diseño no rompe el comportamiento.
+ *
+ *  1. Seguridad: token CSRF y envíos por POST
+ *  2. Modales (abrirModal / cerrarModal)
+ *  3. Plan semanal
+ *  4. Despensa (inventario)
+ *  5. Recetas
+ *  6. Administración y nutricionista
+ *  7. Perfil: restricciones alimentarias
+ *  8. Progreso y gráficos
+ *  9. Portada: carrusel de testimonios
  */
 
 /* ==========================================================================
-   1. VARIABLES GLOBALES Y ESTADO
-   ========================================================================== */
-let recetaParaEliminar = null;
-let usuarioParaEliminar = null;
-window.recetaParaEliminar = null; // Mantenido por compatibilidad
-window.filtroRecetaActual = 'todos';
-
-/* ==========================================================================
-   SEGURIDAD: token CSRF y envíos por POST
+   1. SEGURIDAD
    ========================================================================== */
 
 /** Token CSRF que la cabecera deja en <meta name="csrf-token">. */
@@ -25,16 +27,15 @@ function tokenCsrf() {
 
 /**
  * Envía una acción por POST con el token CSRF, como un formulario normal.
- * Las acciones que cambian datos (borrar, aceptar, entrar en modo gestión)
- * nunca van en un enlace GET: otra web podría dispararlas con una simple imagen.
+ * Las acciones que cambian datos nunca van en un enlace GET: otra web
+ * podría dispararlas con una simple imagen.
  */
 function enviarPost(url, campos = {}) {
     const formulario = document.createElement('form');
     formulario.method = 'POST';
     formulario.action = url;
-    formulario.style.display = 'none';
-    const todos = { ...campos, csrf_token: tokenCsrf() };
-    Object.entries(todos).forEach(([nombre, valor]) => {
+    formulario.hidden = true;
+    Object.entries({ ...campos, csrf_token: tokenCsrf() }).forEach(([nombre, valor]) => {
         const campo = document.createElement('input');
         campo.type = 'hidden';
         campo.name = nombre;
@@ -53,973 +54,410 @@ function escaparHtml(texto) {
 }
 
 /* ==========================================================================
-   2. MÓDULO DE ADMINISTRACIÓN (Usuarios)
+   2. MODALES
+   Estructura: <div class="k-modal" id="..." hidden> con un .k-modal-backdrop
+   y un .k-modal-panel. Se cierran con [data-cerrar-modal], al pulsar fuera
+   o con Escape.
    ========================================================================== */
 
-/**
- * Envía una petición AJAX a api_admin.php para actualizar rol o nutricionista.
- */
-function actualizarCampoUsuario(idUsuario, tipo, valor) {
-    const datosFormulario = new FormData();
-    datosFormulario.append('user_id', idUsuario);
-    datosFormulario.append('action', tipo);
-    datosFormulario.append('value', valor);
-
-    fetch('api_admin.php', { method: 'POST', body: datosFormulario, headers: { 'X-CSRF-Token': tokenCsrf() } })
-    .then(respuesta => respuesta.json())
-    .then(datos => {
-        if (datos.success) window.location.reload();
-        else alert(datos.error || 'No se pudo guardar el cambio.');
-    });
-}
-
-/**
- * Envía una petición AJAX para activar o bloquear a un usuario.
- */
-function alternarEstadoUsuario(idUsuario, rolUsuario, nuevoValor) {
-    const datosFormulario = new FormData();
-    datosFormulario.append('user_id', idUsuario);
-    datosFormulario.append('action', 'toggle_status');
-    datosFormulario.append('value', nuevoValor);
-
-    fetch('api_admin.php', { method: 'POST', body: datosFormulario, headers: { 'X-CSRF-Token': tokenCsrf() } })
-    .then(respuesta => respuesta.json())
-    .then(datos => {
-        if (datos.success) window.location.reload();
-        else alert(datos.error || 'No se pudo cambiar el estado.');
-    });
-}
-
-/**
- * Gestiona la apertura del modal de eliminación de administración mediante Data Attributes.
- */
-window.abrirModalEliminarAdmin = function(id) {
-    const idUsuario = parseInt(id);
-    
-    if (isNaN(idUsuario)) {
-        console.error("Error: El ID recibido no es un número válido:", id);
-        return;
-    }
-
-    const modal = document.getElementById('deleteConfirmModal');
-    if (modal) {
-        modal.setAttribute('data-id-a-eliminar', idUsuario);
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        
-        setTimeout(() => {
-            document.getElementById('modalOverlay')?.classList.replace('opacity-0', 'opacity-100');
-            document.getElementById('modalContent')?.classList.replace('opacity-0', 'opacity-100');
-            document.getElementById('modalContent')?.classList.replace('scale-95', 'scale-100');
-        }, 10);
-    }
-};
-
-/**
- * Ejecuta la redirección final para eliminar un usuario desde administración.
- */
-window.ejecutarEliminacion = function() {
-    const modal = document.getElementById('deleteConfirmModal');
-    const id = modal ? modal.getAttribute('data-id-a-eliminar') : null;
-
-    if (id && id !== "null") {
-        enviarPost('borrar_usuario.php', { id: id });
-    } else {
-        alert("Error crítico: El ID no se pudo recuperar del modal.");
-    }
-};
-
-/**
- * Cierra el modal de eliminación de administración con transiciones.
- */
-window.cerrarModalEliminar = function() {
-    const modal = document.getElementById('deleteConfirmModal');
-    if (!modal) return;
-
-    document.getElementById('modalOverlay')?.classList.replace('opacity-100', 'opacity-0');
-    document.getElementById('modalContent')?.classList.replace('opacity-100', 'opacity-0');
-    document.getElementById('modalContent')?.classList.replace('scale-100', 'scale-95');
-
-    setTimeout(() => {
-        modal.classList.replace('flex', 'hidden');
-        modal.removeAttribute('data-id-a-eliminar');
-    }, 300);
-};
-
-/* ==========================================================================
-   3. MÓDULO DE PLANIFICACIÓN NUTRICIONAL
-   ========================================================================== */
-
-/**
- * Muestra el detalle de una receta en el modal de planificación.
- */
-function abrirReceta(r) {
-    const modal = document.getElementById('modalReceta');
-    if (!modal) return;
-
-    document.getElementById('mTit').innerText = r.titulo;
-    document.getElementById('mMom').innerText = r.momento_comida;
-    document.getElementById('mDesc').innerText = r.descripcion || 'Sin descripción disponible.';
-    document.getElementById('mMacros').innerHTML = `
-        <div class="bg-gray-50 p-3 rounded-2xl text-center"><p class="text-[9px] text-gray-400 font-bold uppercase">Kcal</p><p class="font-black text-gray-800">${Math.round(r.calorias_por_racion)}</p></div>
-        <div class="bg-blue-50 p-3 rounded-2xl text-center"><p class="text-[9px] text-blue-400 font-bold uppercase">Prot</p><p class="font-black text-blue-700">${Math.round(r.proteinas_g_por_racion)}g</p></div>
-        <div class="bg-orange-50 p-3 rounded-2xl text-center"><p class="text-[9px] text-orange-400 font-bold uppercase">Carb</p><p class="font-black text-orange-700">${Math.round(r.carbohidratos_g_por_racion)}g</p></div>
-        <div class="bg-red-50 p-3 rounded-2xl text-center"><p class="text-[9px] text-red-400 font-bold uppercase">Gras</p><p class="font-black text-red-700">${Math.round(r.grasas_g_por_racion)}g</p></div>
-    `;
-    modal.classList.remove('hidden');
-}
-
-/**
- * Muestra el resumen nutricional del día comparado con objetivos.
- */
-function abrirResumenDia(nombre, totales) {
-    const modal = document.getElementById('modalDia');
-    if (!modal || !window.planData) return;
-
-    const meta = window.planData.meta;
-    document.getElementById('mDiaTit').innerText = "Resumen del " + nombre;
-    
-    const kcalPct = Math.min((totales.kcal / meta.kcal) * 100, 100);
-    document.getElementById('mDiaKcalText').innerText = `${Math.round(totales.kcal)} / ${Math.round(meta.kcal)} kcal`;
-    document.getElementById('mDiaKcalBar').style.width = kcalPct + "%";
-    document.getElementById('mDiaKcalBar').className = "h-full transition-all duration-700 " + (totales.kcal > meta.kcal * 1.1 ? "bg-red-500" : "bg-teal-500");
-
-    const macros = [
-        { label: 'Proteínas', actual: totales.p, obj: meta.p, color: 'blue' },
-        { label: 'Carbohidratos', actual: totales.c, obj: meta.c, color: 'orange' },
-        { label: 'Grasas', actual: totales.g, obj: meta.g, color: 'red' }
-    ];
-
-    let html = '';
-    macros.forEach(m => {
-        const pct = Math.min((m.actual / m.obj) * 100, 100);
-        html += `
-            <div>
-                <div class="flex justify-between text-[11px] font-bold mb-1 uppercase tracking-wider">
-                    <span class="text-gray-400">${m.label}</span>
-                    <span class="text-${m.color}-600">${Math.round(m.actual)}g / ${Math.round(m.obj)}g</span>
-                </div>
-                <div class="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                    <div class="h-full bg-${m.color}-500" style="width: ${pct}%"></div>
-                </div>
-            </div>
-        `;
-    });
-    
-    document.getElementById('mDiaMacrosList').innerHTML = html;
-    modal.classList.remove('hidden');
-}
-
-/**
- * Modal de confirmación para eliminar una comida asignada al plan.
- */
-function confirmarEliminarComida(id) {
-    const modal = document.getElementById('modalEliminar');
-    const btn = document.getElementById('btnConfirmarEliminar');
-    if (modal && btn) {
-        btn.onclick = () => enviarPost('planificacion_semanal.php', { eliminar_id: id });
-        modal.classList.remove('hidden');
-    }
-}
-
-function cerrarModalPlan(id) { 
+function abrirModal(id) {
     const modal = document.getElementById(id);
-    if (modal) modal.classList.add('hidden'); 
-}
-
-/* ==========================================================================
-   4. MÓDULO DE INVENTARIO
-   ========================================================================== */
-
-/**
- * Abre el modal de inventario para adición o edición de ingredientes.
- */
-function abrirModalInventario(modo, datos = {}) {
-    const modal = document.getElementById('itemModal');
-    const titulo = document.getElementById('modal-title');
-    const campoAccion = document.getElementById('actionField');
-    const campoIdInventario = document.getElementById('idInventarioField');
-    const entradaNombre = document.getElementById('nombre_ingrediente');
-    const entradaCantidad = document.getElementById('cantidad');
-    const selectorUnidad = document.getElementById('unidad');
-    const botonEnviar = document.getElementById('submitButton');
-
     if (!modal) return;
-
-    if (modo === 'add') {
-        titulo.textContent = 'Añadir Nuevo Ingrediente';
-        campoAccion.value = 'add';
-        campoIdInventario.value = '';
-        entradaNombre.value = '';
-        entradaCantidad.value = '';
-        selectorUnidad.value = '';
-        botonEnviar.innerHTML = '<i class="fas fa-save mr-2"></i> Añadir Ingrediente';
-        botonEnviar.classList.replace('bg-blue-600', 'bg-teal-600');
-    } else if (modo === 'edit') {
-        titulo.textContent = `Editar: ${datos.nombre_ingrediente}`;
-        campoAccion.value = 'edit';
-        campoIdInventario.value = datos.id_inventario;
-        entradaNombre.value = datos.nombre_ingrediente;
-        entradaCantidad.value = parseFloat(datos.cantidad); 
-        selectorUnidad.value = datos.unidad;
-        botonEnviar.innerHTML = '<i class="fas fa-save mr-2"></i> Actualizar Ingrediente';
-        botonEnviar.classList.replace('bg-teal-600', 'bg-blue-600'); 
-    }
-    
-    modal.classList.remove('hidden');
+    modal.hidden = false;
     document.body.classList.add('overflow-hidden');
+    const foco = modal.querySelector('[data-autofocus]') || modal.querySelector('input:not([type=hidden]), select, textarea, button');
+    if (foco) setTimeout(() => foco.focus(), 30);
 }
 
-function cerrarModalInventario() {
-    const modal = document.getElementById('itemModal');
-    if (modal) {
-        modal.classList.add('hidden');
+function cerrarModal(id) {
+    const modal = typeof id === 'string' ? document.getElementById(id) : id;
+    if (!modal) return;
+    modal.hidden = true;
+    if (!document.querySelector('.k-modal:not([hidden])')) {
         document.body.classList.remove('overflow-hidden');
     }
 }
 
-/**
- * Gestiona el modal de confirmación de borrado de ítems de inventario.
- */
+document.addEventListener('click', (evento) => {
+    const cerrar = evento.target.closest('[data-cerrar-modal]');
+    if (cerrar) cerrarModal(cerrar.closest('.k-modal'));
+    if (evento.target.classList.contains('k-modal-backdrop')) cerrarModal(evento.target.closest('.k-modal'));
+});
+
+document.addEventListener('keydown', (evento) => {
+    if (evento.key !== 'Escape') return;
+    const abiertos = document.querySelectorAll('.k-modal:not([hidden])');
+    if (abiertos.length) cerrarModal(abiertos[abiertos.length - 1]);
+});
+
+/** Modal de confirmación genérico: guarda la acción y la ejecuta al confirmar. */
+function confirmar(idModal, accion) {
+    const modal = document.getElementById(idModal);
+    if (!modal) return;
+    const boton = modal.querySelector('[data-confirmar]');
+    if (boton) boton.onclick = () => { boton.disabled = true; accion(); };
+    abrirModal(idModal);
+}
+
+/* ==========================================================================
+   3. PLAN SEMANAL
+   ========================================================================== */
+
+/** Pinta tres fichas de macros (proteína, carbohidratos, grasa) en un contenedor. */
+function pintarMacros(contenedor, p, c, g, kcal) {
+    const ficha = (clase, etiqueta, valor, unidad) => `
+        <div class="k-macro-chip ${clase}">
+            <p class="k-stat-label">${etiqueta}</p>
+            <p class="font-display text-lg font-bold k-strong tabular-nums">${valor}<span class="k-stat-unit">${unidad}</span></p>
+        </div>`;
+    contenedor.innerHTML =
+        (kcal !== undefined ? ficha('k-subtle', 'Calorías', Math.round(kcal), 'kcal') : '') +
+        ficha('k-macro-p', 'Proteína', Math.round(p), 'g') +
+        ficha('k-macro-c', 'Carbohidratos', Math.round(c), 'g') +
+        ficha('k-macro-f', 'Grasa', Math.round(g), 'g');
+}
+
+/** Detalle de una comida del plan. */
+function abrirReceta(r) {
+    if (!document.getElementById('modalReceta')) return;
+    document.getElementById('mTit').textContent = r.titulo;
+    document.getElementById('mMom').textContent = r.momento_comida;
+    document.getElementById('mDesc').textContent = r.descripcion || 'Sin instrucciones.';
+    document.getElementById('mVer').href = 'detalle_receta.php?id=' + encodeURIComponent(r.id_receta);
+    pintarMacros(document.getElementById('mMacros'), r.proteinas_g_por_racion, r.carbohidratos_g_por_racion, r.grasas_g_por_racion, r.calorias_por_racion);
+    abrirModal('modalReceta');
+}
+
+/** Resumen de un día frente a los objetivos. */
+function abrirResumenDia(nombre, totales) {
+    if (!document.getElementById('modalDia') || !window.planData) return;
+    const meta = window.planData.meta;
+    document.getElementById('mDiaTit').textContent = nombre;
+    document.getElementById('mDiaKcalText').textContent = `${Math.round(totales.kcal)} de ${Math.round(meta.kcal)} kcal`;
+
+    const barra = document.getElementById('mDiaKcalBar');
+    barra.style.width = Math.min((totales.kcal / meta.kcal) * 100, 100) + '%';
+    barra.classList.toggle('k-bar-over', totales.kcal > meta.kcal * 1.1);
+
+    const filas = [
+        ['k-macro-p', 'Proteína', totales.p, meta.p],
+        ['k-macro-c', 'Carbohidratos', totales.c, meta.c],
+        ['k-macro-f', 'Grasa', totales.g, meta.g],
+    ];
+    document.getElementById('mDiaMacrosList').innerHTML = filas.map(([clase, etiqueta, actual, objetivo]) => `
+        <div class="${clase}">
+            <div class="mb-1.5 flex items-center justify-between text-sm">
+                <span class="flex items-center gap-2 k-strong"><span class="k-macro-dot"></span>${etiqueta}</span>
+                <span class="tabular-nums k-muted">${Math.round(actual)} / ${Math.round(objetivo)} g</span>
+            </div>
+            <div class="k-track"><div class="k-bar k-macro-bar" style="width:${Math.min((actual / objetivo) * 100, 100)}%"></div></div>
+        </div>`).join('');
+    abrirModal('modalDia');
+}
+
+/** Quitar una comida del plan. */
+function confirmarEliminarComida(id) {
+    confirmar('modalEliminar', () => enviarPost('planificacion_semanal.php', { eliminar_id: id }));
+}
+
+/* ==========================================================================
+   4. DESPENSA
+   ========================================================================== */
+
+function abrirModalInventario(modo, datos = {}) {
+    if (!document.getElementById('itemModal')) return;
+    const editar = modo === 'edit';
+    document.getElementById('modal-title').textContent = editar ? 'Editar ingrediente' : 'Añadir ingrediente';
+    document.getElementById('actionField').value = editar ? 'edit' : 'add';
+    document.getElementById('idInventarioField').value = editar ? datos.id_inventario : '';
+    document.getElementById('nombre_ingrediente').value = editar ? datos.nombre_ingrediente : '';
+    document.getElementById('cantidad').value = editar ? parseFloat(datos.cantidad) : '';
+    document.getElementById('unidad').value = editar ? datos.unidad : '';
+    document.getElementById('submitButton').textContent = editar ? 'Guardar cambios' : 'Añadir';
+    abrirModal('itemModal');
+}
+
 function abrirModalEliminarInventario(id, nombre) {
-    const modalEliminar = document.getElementById('deleteConfirmModal');
-    const visorNombreItem = document.getElementById('deleteItemName');
-    const fondoModal = modalEliminar?.querySelector('.fixed.inset-0.bg-gray-900');
-    const panelModal = modalEliminar?.querySelector('.inline-block.align-middle');
-
-    if (!modalEliminar) return;
-    if (visorNombreItem) visorNombreItem.textContent = nombre;
-    
-    // Evitar duplicidad de eventos clonando el botón
-    const botonConfirmarAntiguo = document.getElementById('confirmDeleteButton');
-    const botonConfirmarNuevo = botonConfirmarAntiguo.cloneNode(true);
-    botonConfirmarAntiguo.replaceWith(botonConfirmarNuevo);
-    
-    botonConfirmarNuevo.addEventListener('click', () => {
-        eliminarItemInventario(id);
-    }, { once: true }); 
-
-    modalEliminar.classList.remove('hidden');
-    document.body.classList.add('overflow-hidden');
-
-    setTimeout(() => {
-        if (fondoModal) fondoModal.classList.replace('opacity-0', 'opacity-80');
-        if (panelModal) panelModal.classList.remove('scale-95', 'opacity-0');
-        if (panelModal) panelModal.classList.add('scale-100', 'opacity-100');
-    }, 10);
-}
-
-function cerrarModalEliminarInventario() {
-    const modalEliminar = document.getElementById('deleteConfirmModal');
-    const fondoModal = modalEliminar?.querySelector('.fixed.inset-0.bg-gray-900');
-    const panelModal = modalEliminar?.querySelector('.inline-block.align-middle');
-
-    if (!modalEliminar) return;
-
-    if (fondoModal) fondoModal.classList.remove('opacity-80');
-    if (panelModal) panelModal.classList.replace('scale-100', 'scale-95');
-    if (panelModal) panelModal.classList.replace('opacity-100', 'opacity-0');
-
-    setTimeout(() => {
-        modalEliminar.classList.add('hidden');
-        document.body.classList.remove('overflow-hidden');
-    }, 300);
-}
-
-/**
- * Procesa la eliminación del inventario mediante un formulario dinámico POST.
- */
-function eliminarItemInventario(id) {
-    cerrarModalEliminarInventario(); 
-    const formularioBorrado = document.createElement('form');
-    formularioBorrado.method = 'POST';
-    formularioBorrado.action = 'inventario.php';
-    
-    const inputAction = (name, val) => {
-        const el = document.createElement('input');
-        el.type = 'hidden'; el.name = name; el.value = val;
-        return el;
-    };
-    
-    formularioBorrado.appendChild(inputAction('action', 'delete'));
-    formularioBorrado.appendChild(inputAction('id_inventario', id));
-    formularioBorrado.appendChild(inputAction('csrf_token', tokenCsrf()));
-    document.body.appendChild(formularioBorrado);
-    formularioBorrado.submit();
+    const visor = document.getElementById('deleteItemName');
+    if (visor) visor.textContent = nombre;
+    confirmar('modalBorrarIngrediente', () => enviarPost('inventario.php', { action: 'delete', id_inventario: id }));
 }
 
 /* ==========================================================================
-   5. MÓDULO DE RECETAS (Filtros y Modal de Creación)
+   5. RECETAS
    ========================================================================== */
 
-function abrirModalReceta() {
-    const modal = document.getElementById('recipeChoiceModal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        document.body.style.overflow = 'hidden'; 
-    }
-}
+window.filtroRecetaActual = 'todos';
 
-function cerrarModalReceta() {
-    const modal = document.getElementById('recipeChoiceModal');
-    if (modal) {
-        modal.classList.add('hidden');
-        document.body.style.overflow = 'auto';
-    }
-}
-
-/**
- * Filtra las recetas por tipo (IA, Manual, Todos) y actualiza la UI.
- */
-window.filtrarPor = function(tipo) {
+/** Filtro por tipo de comida (botones con data-filtro). */
+function filtrarPor(tipo) {
     window.filtroRecetaActual = tipo;
-    
-    const botones = document.querySelectorAll('.filter-btn');
-    botones.forEach(btn => {
-        btn.classList.remove('bg-teal-600', 'text-white', 'active', 'shadow-md');
-        btn.classList.add('bg-white', 'text-gray-400');
-        
-        if (btn.getAttribute('onclick').includes(`'${tipo}'`)) {
-            btn.classList.add('bg-teal-600', 'text-white', 'active', 'shadow-md');
-            btn.classList.remove('bg-white', 'text-gray-400');
-        }
+    document.querySelectorAll('[data-filtro]').forEach(boton => {
+        boton.setAttribute('aria-pressed', boton.dataset.filtro === tipo ? 'true' : 'false');
     });
-
     aplicarFiltrosRecetas();
-};
+}
 
-/**
- * Aplica lógica combinada de búsqueda por texto y filtro por tipo.
- */
-window.aplicarFiltrosRecetas = function() {
-    const entradaBusqueda = document.getElementById('recipeSearch');
-    const tarjetasReceta = document.querySelectorAll('.recipe-card');
-    const sinResultados = document.getElementById('noResults');
-    
-    if (!tarjetasReceta.length) return;
-
-    const terminoBusqueda = entradaBusqueda ? entradaBusqueda.value.toLowerCase() : "";
-    let contadorVisibles = 0;
-
-    tarjetasReceta.forEach(tarjeta => {
-        const tipoTarjeta = tarjeta.getAttribute('data-tipo').toLowerCase();
-        const tituloTarjeta = tarjeta.getAttribute('data-titulo').toLowerCase();
-
-        const coincideTipo = (window.filtroRecetaActual === 'todos' || tipoTarjeta === window.filtroRecetaActual);
-        const coincideBusqueda = tituloTarjeta.includes(terminoBusqueda);
-
-        if (coincideTipo && coincideBusqueda) {
-            tarjeta.classList.remove('hidden');
-            tarjeta.style.display = 'block';
-            contadorVisibles++;
-        } else {
-            tarjeta.classList.add('hidden');
-            tarjeta.style.display = 'none';
-        }
+/** Búsqueda por título + filtro por tipo. */
+function aplicarFiltrosRecetas() {
+    const tarjetas = document.querySelectorAll('.recipe-card');
+    if (!tarjetas.length) return;
+    const termino = (document.getElementById('recipeSearch')?.value || '').toLowerCase().trim();
+    let visibles = 0;
+    tarjetas.forEach(tarjeta => {
+        const coincide = (window.filtroRecetaActual === 'todos' || tarjeta.dataset.tipo === window.filtroRecetaActual)
+            && tarjeta.dataset.titulo.includes(termino);
+        tarjeta.hidden = !coincide;
+        if (coincide) visibles++;
     });
+    const sinResultados = document.getElementById('noResults');
+    if (sinResultados) sinResultados.hidden = visibles > 0;
+}
 
-    if (sinResultados) {
-        sinResultados.style.display = (contadorVisibles === 0) ? 'block' : 'none';
-    }
-};
-
-/**
- * Gestión específica para la eliminación de recetas del usuario.
- */
-window.abrirModalEliminar = function(id) {
-    window.recetaParaEliminar = id;
-    const modal = document.getElementById('deleteConfirmModal');
-    const overlay = document.getElementById('modalOverlay');
-    const content = document.getElementById('modalContent');
-
-    if (modal) {
-        modal.classList.remove('hidden');
-        setTimeout(() => {
-            if (overlay) overlay.classList.add('opacity-100');
-            if (content) content.classList.add('opacity-100', 'scale-100');
-        }, 10);
-    }
-};
-
-window.cerrarModalEliminarReceta = function() { // Renombrado internamente para claridad
-    const modal = document.getElementById('deleteConfirmModal');
-    const overlay = document.getElementById('modalOverlay');
-    const content = document.getElementById('modalContent');
-
-    if (overlay) overlay.classList.remove('opacity-100');
-    if (content) content.classList.remove('opacity-100', 'scale-100');
-
-    setTimeout(() => {
-        if (modal) modal.classList.add('hidden');
-        window.recetaParaEliminar = null;
-    }, 300);
-};
+function abrirModalEliminar(id) {
+    confirmar('modalBorrarReceta', () => enviarPost('../../core/borrar_receta.php', { id: id }));
+}
 
 /* ==========================================================================
-   6. INICIALIZACIÓN DE EVENTOS (DOMContentLoaded)
+   6. ADMINISTRACIÓN Y NUTRICIONISTA
    ========================================================================== */
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Buscador de recetas
-    const inputSearch = document.getElementById('recipeSearch');
-    if (inputSearch) {
-        inputSearch.addEventListener('input', aplicarFiltrosRecetas);
+function llamarApiAdmin(campos, mensajeError) {
+    const datos = new FormData();
+    Object.entries(campos).forEach(([clave, valor]) => datos.append(clave, valor));
+    fetch('api_admin.php', { method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf() } })
+        .then(respuesta => respuesta.json())
+        .then(json => {
+            if (json.success) window.location.reload();
+            else alert(json.error || mensajeError);
+        })
+        .catch(() => alert(mensajeError));
+}
+
+function actualizarCampoUsuario(idUsuario, tipo, valor) {
+    llamarApiAdmin({ user_id: idUsuario, action: tipo, value: valor }, 'No se pudo guardar el cambio.');
+}
+
+function alternarEstadoUsuario(idUsuario, _rol, nuevoValor) {
+    llamarApiAdmin({ user_id: idUsuario, action: 'toggle_status', value: nuevoValor }, 'No se pudo cambiar el estado.');
+}
+
+function abrirModalEliminarAdmin(id, nombre) {
+    const visor = document.getElementById('borrarUsuarioNombre');
+    if (visor && nombre) visor.textContent = nombre;
+    confirmar('modalBorrarUsuario', () => enviarPost('borrar_usuario.php', { id: id }));
+}
+
+/** Filtra filas por texto (data-buscar) y, si hay selector, por rol (data-rol). */
+function prepararFiltroDeFilas(idBuscador, selectorFilas, idSinResultados, idSelectorRol) {
+    const buscador = document.getElementById(idBuscador);
+    if (!buscador) return;
+    const selectorRol = idSelectorRol ? document.getElementById(idSelectorRol) : null;
+    const filtrar = () => {
+        const termino = buscador.value.toLowerCase().trim();
+        const rol = selectorRol ? selectorRol.value : 'all';
+        let visibles = 0;
+        document.querySelectorAll(selectorFilas).forEach(fila => {
+            const coincide = (fila.dataset.buscar || '').includes(termino) && (rol === 'all' || fila.dataset.rol === rol);
+            fila.hidden = !coincide;
+            if (coincide) visibles++;
+        });
+        const vacio = document.getElementById(idSinResultados);
+        if (vacio) vacio.hidden = visibles > 0;
+    };
+    buscador.addEventListener('input', filtrar);
+    if (selectorRol) selectorRol.addEventListener('change', filtrar);
+}
+
+/* ==========================================================================
+   INICIALIZACIÓN
+   ========================================================================== */
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Recetas: buscador
+    document.getElementById('recipeSearch')?.addEventListener('input', aplicarFiltrosRecetas);
+
+    // Listados con buscador
+    prepararFiltroDeFilas('realTimeSearch', '.user-row', 'sinUsuarios', 'roleFilter');
+    prepararFiltroDeFilas('buscadorPaciente', '.fila-paciente', 'noResultados');
+
+    // Generador con IA: pantalla de espera mientras responde la API
+    const formularioIA = document.getElementById('formGeneradorIA');
+    if (formularioIA) {
+        const frases = ['Revisando tu despensa…', 'Teniendo en cuenta tus alergias…', 'Ajustando los macros…', 'Casi lista…'];
+        formularioIA.addEventListener('submit', (evento) => {
+            if (evento.submitter && evento.submitter.name !== 'generar') return;
+            const capa = document.getElementById('loadingOverlay');
+            const mensaje = document.getElementById('loadingMessage');
+            if (capa) capa.hidden = false;
+            let i = 0;
+            setInterval(() => { if (mensaje) mensaje.textContent = frases[i++ % frases.length]; }, 2200);
+        });
     }
 
-    // Confirmación de eliminación de recetas
-    const btnConfirmarReceta = document.getElementById('confirmDeleteButton');
-    if (btnConfirmarReceta) {
-        btnConfirmarReceta.onclick = function() {
-            if (window.recetaParaEliminar) {
-                enviarPost('../../core/borrar_receta.php', { id: window.recetaParaEliminar });
-            }
-        };
-    }
+    iniciarRestricciones();
+    iniciarProgreso();
+    iniciarGraficoPanel();
+    iniciarCarrusel();
 });
 
 /* ==========================================================================
-   LÓGICA AL CARGAR EL DOM
+   7. PERFIL: RESTRICCIONES ALIMENTARIAS
    ========================================================================== */
-document.addEventListener('DOMContentLoaded', () => {
-    
 
-    /* ==========================================================================
-       1. CARRUSEL DE TESTIMONIOS (Landing Page)
-       ========================================================================== */
-    const carrilTestimonios = document.getElementById('testimony-track');
-    
-    // Verificamos si estamos en la Landing Page (donde existe el carrusel)
-    if (carrilTestimonios) {
-        const contenedorTestimonios = document.getElementById('testimony-wrapper');
-        const diapositivas = carrilTestimonios.querySelectorAll('.flex-shrink-0');
-        const puntosIndicadores = document.querySelectorAll('#testimony-dots .dot');
-        
-        let indiceActual = 0;
-        const totalDiapositivas = diapositivas.length;
-        const duracionDiapositiva = 7000; // 7 segundos
+function iniciarRestricciones() {
+    const lista = document.getElementById('restrictionsList');
+    const campoJson = document.getElementById('restricciones_json');
+    const boton = document.getElementById('agregarRestriccionBtn');
+    const entrada = document.getElementById('nuevo_ingrediente');
+    const selector = document.getElementById('new_tipo');
+    const aviso = document.getElementById('restriccionAviso');
+    if (!lista || !campoJson || !boton) return;
 
-        function actualizarCarrusel() {
-            const desplazamiento = -indiceActual * 100;
-            carrilTestimonios.style.transform = `translateX(${desplazamiento}%)`;
+    let restricciones = (window.profileData && window.profileData.currentRestrictions) || [];
+    const tipos = (window.profileData && window.profileData.tipoMap) || {};
+    const claseTipo = { alergia: 'k-badge-danger', intolerancia: 'k-badge-warn' };
 
-            // Actualizar puntos indicadores
-            puntosIndicadores.forEach((punto, indice) => {
-                if (indice === indiceActual) {
-                    punto.classList.replace('bg-gray-300', 'bg-teal-600');
-                } else {
-                    punto.classList.replace('bg-teal-600', 'bg-gray-300');
-                }
-            });
-        }
+    const avisar = (texto) => {
+        if (!aviso) return;
+        aviso.textContent = texto;
+        aviso.hidden = !texto;
+    };
 
-        function irASiguiente() {
-            indiceActual = (indiceActual + 1) % totalDiapositivas;
-            actualizarCarrusel();
-        }
-
-        // Auto-rotación
-        let idIntervalo = setInterval(irASiguiente, duracionDiapositiva);
-        
-        // Pausa al pasar el ratón
-        if (contenedorTestimonios) {
-            contenedorTestimonios.addEventListener('mouseenter', () => clearInterval(idIntervalo));
-            contenedorTestimonios.addEventListener('mouseleave', () => {
-                idIntervalo = setInterval(irASiguiente, duracionDiapositiva);
-            });
-        }
-
-        actualizarCarrusel();
-        console.log("Carrusel inicializado correctamente.");
-    }
-
-
-    /* ==========================================================================
-       2. FILTRADO DE USUARIOS (Panel Admin)
-       ========================================================================== */
-
-    /**
-     * Filtra los usuarios en pantalla basándose en el buscador y el selector de roles.
-     */
-    function filtrarUsuarios() {
-        const entradaBusqueda = document.getElementById('realTimeSearch');
-        const selectorRol = document.getElementById('roleFilter');
-        
-        if (!entradaBusqueda || !selectorRol) return;
-
-        const terminoBusqueda = entradaBusqueda.value.toLowerCase().trim();
-        const valorRol = selectorRol.value;
-        const filas = document.querySelectorAll('.user-row');
-        
-        filas.forEach(fila => {
-            const coincideTexto = (fila.getAttribute('data-search') || "").includes(terminoBusqueda);
-            const coincideRol = (valorRol === 'all' || fila.getAttribute('data-role') === valorRol);
-            
-            // Se mantiene "grid" o "none" para no romper el diseño CSS de Tailwind/Flex
-            fila.style.display = (coincideTexto && coincideRol) ? "grid" : "none";
-        });
-    }
-
-    // Escuchadores de eventos para filtrado reactivo (Solo si existen los elementos)
-    const buscadorTiempoReal = document.getElementById('realTimeSearch');
-    const filtroRol = document.getElementById('roleFilter');
-
-    if (buscadorTiempoReal) buscadorTiempoReal.addEventListener('input', filtrarUsuarios);
-    if (filtroRol) filtroRol.addEventListener('change', filtrarUsuarios);
-
-
-    /* ==========================================================================
-       3. FILTRADO DE PACIENTES (Panel Nutricionista)
-       ========================================================================== */
-    const entradaBuscadorPaciente = document.getElementById('buscadorPaciente');
-    if (entradaBuscadorPaciente) {
-        entradaBuscadorPaciente.addEventListener('input', function(evento) {
-            const terminoBusqueda = evento.target.value.toLowerCase().trim();
-            const filasPacientes = document.querySelectorAll('.fila-paciente');
-            const mensajeNoResultados = document.getElementById('noResultados');
-            let totalEncontrados = 0;
-
-            filasPacientes.forEach(fila => {
-                const elementoNombre = fila.querySelector('.nombre-paciente');
-                const elementoCorreo = fila.querySelector('.correo-paciente');
-                
-                const nombre = elementoNombre ? elementoNombre.textContent.toLowerCase() : "";
-                const correo = elementoCorreo ? elementoCorreo.textContent.toLowerCase() : "";
-                
-                if (nombre.includes(terminoBusqueda) || correo.includes(terminoBusqueda)) {
-                    fila.style.display = '';
-                    totalEncontrados++;
-                } else {
-                    fila.style.display = 'none';
-                }
-            });
-
-            if (mensajeNoResultados) {
-                // Oculta el mensaje si hay resultados o si la búsqueda está vacía
-                mensajeNoResultados.classList.toggle('hidden', totalEncontrados > 0 || terminoBusqueda === "");
-            }
-        });
-    }
-
-
-    /* ==========================================================================
-       4. GESTIÓN DE RECETAS (Borrado)
-       ========================================================================== */
-    const botonConfirmarBorrado = document.getElementById('confirmDeleteButton');
-    if (botonConfirmarBorrado) {
-        botonConfirmarBorrado.addEventListener('click', function() {
-            // Utilizamos la variable global "recetaParaEliminar" que definimos antes
-            if (recetaParaEliminar) {
-                enviarPost('../../core/borrar_receta.php', { id: recetaParaEliminar });
-            }
-        });
-    }
-
-
-    /* ==========================================================================
-       5. GENERADOR DE RECETAS CON IA (Chef IA)
-       ========================================================================== */
-    const formularioIA = document.getElementById('formGeneradorIA');
-    const capaCarga = document.getElementById('loadingOverlay');
-    const elementoMensajeCarga = document.getElementById('loadingMessage');
-    
-    // Frases que se mostrarán cíclicamente durante la espera de la API
-    const frasesDeEspera = [
-        "Consultando tu inventario...",
-        "Calculando proteínas...",
-        "Buscando el sabor perfecto...",
-        "Ajustando macros...",
-        "Casi listo..."
-    ];
-
-    if (formularioIA) {
-        formularioIA.addEventListener('submit', function() {
-            // Mostramos la capa de carga (overlay)
-            if (capaCarga) capaCarga.classList.remove('hidden');
-            
-            let indiceFrase = 0;
-            // Intervalo para cambiar el mensaje cada 2 segundos
-            setInterval(() => {
-                if (elementoMensajeCarga) {
-                    elementoMensajeCarga.innerText = frasesDeEspera[indiceFrase % frasesDeEspera.length];
-                    indiceFrase++;
-                }
-            }, 2000);
-        });
-    }
-
-
-    /* ==========================================================================
-       6. PERFIL DE USUARIO (Gestión Dinámica de Restricciones)
-       ========================================================================== */
-
-    // Variable persistente para la sesión actual del DOM
-    let listaRestricciones = [];
-
-    /**
-     * Renderiza la lista completa de restricciones en el DOM.
-     */
-    function renderizarRestricciones() {
-        const contenedorLista = document.getElementById('restrictionsList');
-        const entradaJsonOculta = document.getElementById('restricciones_json');
-        
-        // Si no estamos en la página de perfil, salimos
-        if (!contenedorLista || !entradaJsonOculta) return;
-
-        // Recuperamos el mapa de tipos desde el puente de datos
-        const mapaTipos = window.profileData ? window.profileData.tipoMap : {};
-        
-        contenedorLista.innerHTML = '';
-        
-        if (listaRestricciones.length === 0) {
-            contenedorLista.innerHTML = `<li class="text-sm text-gray-500 italic" id="emptyMessage">No hay restricciones añadidas.</li>`;
-            entradaJsonOculta.value = '[]';
+    const pintar = () => {
+        campoJson.value = JSON.stringify(restricciones);
+        if (!restricciones.length) {
+            lista.innerHTML = '<li class="py-3 text-sm k-muted">Aún no has añadido ninguna.</li>';
             return;
         }
-
-        listaRestricciones.forEach((restriccion, indice) => {
-            const itemLista = document.createElement('li');
-            itemLista.className = 'flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-red-100';
-            
-            // Determinar clase según el tipo
-            const claseTipo = restriccion.tipo === 'alergia' ? 'bg-red-200 text-red-800' : 
-                               restriccion.tipo === 'intolerancia' ? 'bg-orange-200 text-orange-800' : 
-                               'bg-gray-200 text-gray-800';
-
-            // Contenido del item
-            itemLista.innerHTML = `
-                <span>
-                    <span class="font-medium text-gray-900">${escaparHtml(restriccion.ingrediente.toUpperCase())}</span> 
-                    <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full ${claseTipo}">
-                        ${escaparHtml(mapaTipos[restriccion.tipo] || restriccion.tipo)}
-                    </span>
-                </span>
-            `;
-            
-            // Botón de Eliminar
-            const botonEliminar = document.createElement('button');
-            botonEliminar.type = 'button';
-            botonEliminar.innerHTML = `
-                <svg class="w-5 h-5 text-red-500 hover:text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                </svg>
-            `;
-            botonEliminar.onclick = () => eliminarRestriccion(indice);
-            
-            itemLista.appendChild(botonEliminar);
-            contenedorLista.appendChild(itemLista);
+        lista.innerHTML = '';
+        restricciones.forEach((r, indice) => {
+            const fila = document.createElement('li');
+            fila.className = 'flex items-center justify-between gap-3 py-2.5';
+            fila.innerHTML = `
+                <span class="flex min-w-0 items-center gap-2.5">
+                    <span class="truncate text-sm font-medium k-strong">${escaparHtml(r.ingrediente)}</span>
+                    <span class="k-badge ${claseTipo[r.tipo] || ''}">${escaparHtml(tipos[r.tipo] || r.tipo)}</span>
+                </span>`;
+            const quitar = document.createElement('button');
+            quitar.type = 'button';
+            quitar.className = 'k-btn k-btn-ghost k-btn-icon k-btn-danger-text';
+            quitar.setAttribute('aria-label', 'Quitar ' + r.ingrediente);
+            quitar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+            quitar.onclick = () => { restricciones.splice(indice, 1); pintar(); };
+            fila.appendChild(quitar);
+            lista.appendChild(fila);
         });
+    };
 
-        // Actualizar el campo oculto con el JSON para el envío del formulario PHP
-        entradaJsonOculta.value = JSON.stringify(listaRestricciones);
-    }
-
-    /**
-     * Añade una nueva restricción a la lista local.
-     */
-    function agregarRestriccion() {
-        const entradaNuevoIngrediente = document.getElementById('nuevo_ingrediente');
-        const selectorNuevoTipo = document.getElementById('new_tipo');
-        
-        if (!entradaNuevoIngrediente) return;
-
-        const nombreIngrediente = entradaNuevoIngrediente.value.trim();
-        const tipoSeleccionado = selectorNuevoTipo.value;
-
-        if (nombreIngrediente === '') {
-            Swal.fire('Error', 'Por favor, ingresa el nombre del ingrediente.', 'error');
+    const anadir = () => {
+        const nombre = entrada.value.trim();
+        if (!nombre) { avisar('Escribe el alimento que quieres evitar.'); return; }
+        if (restricciones.some(r => r.ingrediente.toLowerCase() === nombre.toLowerCase())) {
+            avisar(`«${nombre}» ya está en la lista.`);
             return;
         }
+        restricciones.push({ ingrediente: nombre.charAt(0).toUpperCase() + nombre.slice(1), tipo: selector.value });
+        entrada.value = '';
+        avisar('');
+        pintar();
+        entrada.focus();
+    };
 
-        // Evitar duplicados
-        const esDuplicado = listaRestricciones.some(r => r.ingrediente.toLowerCase() === nombreIngrediente.toLowerCase());
-        if (esDuplicado) {
-            Swal.fire('Aviso', `El ingrediente "${nombreIngrediente}" ya está en la lista.`, 'info');
-            entradaNuevoIngrediente.value = '';
-            return;
-        }
-        
-        const ingredienteFormateado = nombreIngrediente.charAt(0).toUpperCase() + nombreIngrediente.slice(1).toLowerCase();
+    boton.addEventListener('click', anadir);
+    entrada.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); anadir(); } });
+    pintar();
+}
 
-        listaRestricciones.push({
-            ingrediente: ingredienteFormateado,
-            tipo: tipoSeleccionado
-        });
+/* ==========================================================================
+   8. PROGRESO Y GRÁFICOS
+   ========================================================================== */
 
-        entradaNuevoIngrediente.value = '';
-        renderizarRestricciones();
-    }
+/** Color de marca actual (claro u oscuro) para los gráficos. */
+function colorMarca() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--k-brand').trim() || '#0d9488';
+}
 
-    /**
-     * Elimina una restricción por su índice en el array.
-     */
-    function eliminarRestriccion(indice) {
-        listaRestricciones.splice(indice, 1);
-        renderizarRestricciones();
-    }
+/** Gráfico de línea de peso en un <canvas>. */
+function graficoPeso(lienzo, datos, conEjes) {
+    if (!window.Chart || !lienzo || datos.length < 2) return;
+    const color = colorMarca();
+    const contexto = lienzo.getContext('2d');
+    const degradado = contexto.createLinearGradient(0, 0, 0, lienzo.clientHeight || 240);
+    degradado.addColorStop(0, color + '40');
+    degradado.addColorStop(1, color + '00');
+    const pesos = datos.map(d => parseFloat(d.peso_kg));
 
-    // Inicialización de listeners de Perfil (Dentro del DOMContentLoaded general)
-    const botonAñadirRestriccion = document.getElementById('agregarRestriccionBtn');
-    const entradaTextoIngrediente = document.getElementById('nuevo_ingrediente');
-
-    if (botonAñadirRestriccion) {
-        // Cargar datos iniciales desde el puente PHP
-        if (window.profileData && window.profileData.currentRestrictions) {
-            listaRestricciones = window.profileData.currentRestrictions;
-        }
-        
-        botonAñadirRestriccion.addEventListener('click', agregarRestriccion);
-        renderizarRestricciones();
-    }
-
-    if (entradaTextoIngrediente) {
-        entradaTextoIngrediente.addEventListener('keydown', function(evento) {
-            if (evento.key === 'Enter') {
-                evento.preventDefault();
-                agregarRestriccion();
-            }
-        });
-    }
-
-    /* ==========================================================================
-    7. PLANIFICACIÓN SEMANAL (Gestión de Comidas y Resúmenes Diarios)
-    ========================================================================== */
-
-    /**
-     * Listener global para cerrar modales al hacer clic en el overlay (fondo oscuro).
-     */
-    window.addEventListener('click', function(e) {
-        // Detectamos si el clic fue en el fondo oscuro de cualquier modal de planificación
-        if (e.target.classList.contains('bg-black/60') || e.target.id === 'modalReceta' || e.target.id === 'modalDia' || e.target.id === 'modalEliminar') {
-            const modales = ['modalReceta', 'modalDia', 'modalEliminar'];
-            modales.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.classList.add('hidden');
-            });
-        }
-    });
-
-    /* ==========================================================================
-       8. SEGUIMIENTO DE PROGRESO (Gráficas y Estadísticas)
-       ========================================================================== */
-
-    /**
-     * Inicializa y renderiza la gráfica de peso utilizando Chart.js
-     */
-    function inicializarGraficaProgreso() {
-        const datosProgreso = window.progresoData;
-        const contextoLienzo = document.getElementById("sparklineChart")?.getContext("2d");
-        
-        if (!contextoLienzo || !datosProgreso || datosProgreso.length < 2) return;
-
-        const etiquetasFechas = datosProgreso.map(entrada => entrada.fecha);
-        const listaPesos = datosProgreso.map(entrada => parseFloat(entrada.peso_kg));
-        const datosCintura = datosProgreso.filter(entrada => entrada.cintura_cm > 0).map(entrada => parseFloat(entrada.cintura_cm));
-
-        // --- Cálculo de Métricas en el DOM ---
-        const pesoInicial = listaPesos[0];
-        const pesoActual = listaPesos[listaPesos.length - 1];
-        const diferenciaPeso = (pesoActual - pesoInicial).toFixed(1);
-
-        if(document.getElementById("statInicial")) document.getElementById("statInicial").textContent = pesoInicial + " kg";
-        if(document.getElementById("statActual")) document.getElementById("statActual").textContent = pesoActual + " kg";
-
-        const elementoCambio = document.getElementById("statCambio");
-        if (elementoCambio) {
-            elementoCambio.textContent = diferenciaPeso + " kg";
-            // Color según si subió o bajó de peso
-            elementoCambio.style.color = diferenciaPeso < 0 ? "#059669" : (diferenciaPeso > 0 ? "#dc2626" : "#374151");
-        }
-
-        // Métricas de Cintura
-        const estadisticaCinturaCambio = document.getElementById("statCinturaCambio");
-        if (estadisticaCinturaCambio) {
-            if (datosCintura.length >= 2) {
-                const cinturaInicial = datosCintura[0];
-                const cinturaActual = datosCintura[datosCintura.length - 1];
-                const diferenciaCintura = (cinturaActual - cinturaInicial).toFixed(1);
-                estadisticaCinturaCambio.textContent = diferenciaCintura + " cm";
-                estadisticaCinturaCambio.style.color = diferenciaCintura < 0 ? "#059669" : (diferenciaCintura > 0 ? "#dc2626" : "#374151");
-            } else {
-                estadisticaCinturaCambio.textContent = "- N/A -";
-            }
-        }
-
-        // Texto de tendencia
-        const textoTendencia = document.getElementById("trendText");
-        const iconoTendencia = document.getElementById("trendIcon");
-        if (textoTendencia && iconoTendencia) {
-            const tendencia = pesoActual - pesoInicial;
-            textoTendencia.textContent = tendencia < 0 ? "Descenso saludable" : (tendencia > 0 ? "Aumento de peso" : "Estable");
-            iconoTendencia.textContent = tendencia < 0 ? "📉" : (tendencia > 0 ? "📈" : "➖");
-        }
-
-        // --- Renderizado de Chart.js ---
-        const degradado = contextoLienzo.createLinearGradient(0, 0, 0, 250);
-        degradado.addColorStop(0, "rgba(13, 148, 136, 0.4)");
-        degradado.addColorStop(1, "rgba(13, 148, 136, 0)");
-
-        new Chart(contextoLienzo, {
-            type: "line",
-            data: { 
-                labels: etiquetasFechas, 
-                datasets: [{ 
-                    data: listaPesos, 
-                    borderColor: "#0d9488", 
-                    borderWidth: 3, 
-                    backgroundColor: degradado, 
-                    pointRadius: 0, 
-                    tension: 0.4, 
-                    fill: true 
-                }] 
-            },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                plugins: { 
-                    legend: { display: false }, 
-                    tooltip: { enabled: true, callbacks: { label: contexto => contexto.raw + " kg" } } 
+    new Chart(contexto, {
+        type: 'line',
+        data: {
+            labels: datos.map(d => d.fecha),
+            datasets: [{ data: pesos, borderColor: color, borderWidth: 2.5, backgroundColor: degradado, fill: true, tension: 0.35,
+                         pointRadius: conEjes ? 3 : 0, pointHoverRadius: 5, pointBackgroundColor: color }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    displayColors: false,
+                    callbacks: {
+                        title: c => new Date(c[0].label).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
+                        label: c => c.raw + ' kg',
+                    },
                 },
-                scales: { 
-                    x: { display: false }, 
-                    y: { display: false, suggestedMin: Math.min(...listaPesos) - 1 } 
-                }
-            }
-        });
-    }
+            },
+            scales: {
+                x: { display: conEjes, grid: { display: false },
+                     ticks: { maxTicksLimit: 6, callback(v) { return new Date(this.getLabelForValue(v)).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); } } },
+                y: { display: conEjes, suggestedMin: Math.min(...pesos) - 1, suggestedMax: Math.max(...pesos) + 1, ticks: { maxTicksLimit: 5 } },
+            },
+        },
+    });
+}
 
-    /**
-     * Gestión del Modal de Eliminación de registros de progreso
-     */
-    function mostrarModalEliminarProgreso(fecha, fechaLegible) {
-        const modal = document.getElementById('deleteModal');
-        if (!modal) return;
-        document.getElementById('modalFechaDisplay').textContent = fechaLegible;
-        document.getElementById('modalFechaInput').value = fecha;
-        modal.classList.remove('opacity-0', 'pointer-events-none');
-        modal.querySelector('.max-w-sm')?.classList.add('scale-100');
-    }
+function iniciarProgreso() {
+    if (window.progresoData) graficoPeso(document.getElementById('sparklineChart'), window.progresoData, true);
 
-    function ocultarModalEliminarProgreso() {
-        const modal = document.getElementById('deleteModal');
-        if (!modal) return;
-        modal.classList.add('opacity-0', 'pointer-events-none');
-        modal.querySelector('.max-w-sm')?.classList.remove('scale-100');
-    }
-
-    // Inicialización de Progreso
-    const contenedorGrafica = document.getElementById('chartContainer');
-    if (contenedorGrafica && window.progresoData) {
-        if (window.progresoData.length >= 2) {
-            contenedorGrafica.style.display = 'block';
-            inicializarGraficaProgreso();
-        } else {
-            contenedorGrafica.style.display = 'none';
-        }
-    }
-
-    // Escuchadores para botones de eliminar progreso
+    // Borrar un registro: el botón lleva la fecha en data-fecha
     document.querySelectorAll('.btn-delete-progreso').forEach(boton => {
         boton.addEventListener('click', () => {
-            mostrarModalEliminarProgreso(boton.dataset.fecha, boton.dataset.displayFecha);
+            document.getElementById('modalFechaDisplay').textContent = boton.dataset.displayFecha;
+            document.getElementById('modalFechaInput').value = boton.dataset.fecha;
+            abrirModal('deleteModal');
         });
     });
+}
 
-    const cancelarEliminarProgreso = document.getElementById('cancelDeleteBtn');
-    if (cancelarEliminarProgreso) {
-        cancelarEliminarProgreso.addEventListener('click', ocultarModalEliminarProgreso);
-    }
+function iniciarGraficoPanel() {
+    if (window.dashboardData) graficoPeso(document.getElementById('progressChart'), window.dashboardData.progreso || [], false);
+}
 
-    /* ==========================================================================
-       9. DASHBOARD: GRÁFICOS DE MACROS Y PROGRESO
-       ========================================================================== */
+/* ==========================================================================
+   9. PORTADA: CARRUSEL DE TESTIMONIOS
+   ========================================================================== */
 
-    // 1. Gráfico de Macronutrientes (Doughnut/Dona)
-    const lienzoMacros = document.getElementById('macroChart');
-    if (lienzoMacros && window.dashboardData && window.dashboardData.hasProfile) {
-        new Chart(lienzoMacros, {
-            type: 'doughnut',
-            data: {
-                labels: ['Proteínas', 'Carbohidratos', 'Grasas'],
-                datasets: [{
-                    data: window.dashboardData.macros,
-                    backgroundColor: ['#4287E2', '#FBBF24', '#F97316'],
-                    hoverOffset: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '70%',
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function(contexto) {
-                                let etiqueta = contexto.label || '';
-                                if (etiqueta) etiqueta += ': ';
-                                if (contexto.parsed !== null) etiqueta += contexto.parsed + 'g';
-                                return etiqueta;
-                            }
-                        }
-                    }
-                }
-            }
+function iniciarCarrusel() {
+    const carril = document.getElementById('testimony-track');
+    if (!carril) return;
+    const contenedor = document.getElementById('testimony-wrapper');
+    const total = carril.querySelectorAll('.flex-shrink-0').length;
+    const puntos = document.querySelectorAll('#testimony-dots .dot');
+    let actual = 0;
+
+    const mover = () => {
+        carril.style.transform = `translateX(${-actual * 100}%)`;
+        puntos.forEach((punto, i) => {
+            punto.classList.toggle('bg-teal-600', i === actual);
+            punto.classList.toggle('bg-gray-300', i !== actual);
         });
-    }
+    };
+    const siguiente = () => { actual = (actual + 1) % total; mover(); };
 
-    // 2. Gráfico de Progreso (Línea)
-    const datosProgresoDashboard = window.dashboardData ? window.dashboardData.progreso : [];
-    const lienzoProgreso = document.getElementById("progressChart");
-
-    if (lienzoProgreso && datosProgresoDashboard.length >= 2) {
-        const etiquetasFechas = datosProgresoDashboard.map(e => e.fecha);
-        const listaPesos = datosProgresoDashboard.map(e => parseFloat(e.peso_kg));
-        const contextoProgreso = lienzoProgreso.getContext("2d");
-        
-        const degradadoProgreso = contextoProgreso.createLinearGradient(0, 0, 0, 250);
-        degradadoProgreso.addColorStop(0, "rgba(59, 130, 246, 0.4)");
-        degradadoProgreso.addColorStop(1, "rgba(59, 130, 246, 0)");
-
-        new Chart(contextoProgreso, {
-            type: "line",
-            data: { 
-                labels: etiquetasFechas, 
-                datasets: [{ 
-                    data: listaPesos, 
-                    borderColor: "#3b82f6", 
-                    borderWidth: 3, 
-                    backgroundColor: degradadoProgreso, 
-                    pointRadius: 3, 
-                    pointBackgroundColor: "#3b82f6",
-                    tension: 0.3, 
-                    fill: true 
-                }] 
-            },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                animation: { duration: 1200, easing: "easeOutQuart" }, 
-                plugins: { 
-                    legend: { display: false }, 
-                    tooltip: { 
-                        backgroundColor: "#1e3a8a", 
-                        padding: 10, 
-                        displayColors: false, 
-                        callbacks: { 
-                            title: ctx => (new Date(ctx[0].label)).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-                            label: ctx => 'Peso: ' + ctx.raw + " kg" 
-                        } 
-                    } 
-                }, 
-                scales: {
-                    x: { display: false }, 
-                    y: { 
-                        display: false, 
-                        suggestMin: Math.min(...listaPesos) - 0.5, 
-                        suggestMax: Math.max(...listaPesos) + 0.5  
-                    } 
-                } 
-            }
-        });
-    }
-});
+    let intervalo = setInterval(siguiente, 7000);
+    contenedor?.addEventListener('mouseenter', () => clearInterval(intervalo));
+    contenedor?.addEventListener('mouseleave', () => { intervalo = setInterval(siguiente, 7000); });
+    mover();
+}
