@@ -35,10 +35,14 @@ $numPacientes = $totalPacientes->fetchColumn();
 // 2. Listado detallado de pacientes
 // Combinamos 'usuario' (para el correo) y 'perfil' (para datos antropométricos)
 $stmt = $pdo->prepare("
-    SELECT u.id_usuario, p.nombre, u.correo, p.peso_kg, p.objetivo 
+    SELECT u.id_usuario, p.nombre, u.correo, p.peso_kg, p.objetivo, p.calorias_netas_objetivo,
+           (SELECT pr.peso_kg FROM progreso pr WHERE pr.id_usuario = u.id_usuario AND pr.peso_kg IS NOT NULL ORDER BY pr.fecha ASC LIMIT 1) AS peso_inicial,
+           (SELECT MAX(pr.fecha) FROM progreso pr WHERE pr.id_usuario = u.id_usuario) AS ultimo_registro,
+           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario) AS comidas_plan
     FROM usuario u
     JOIN perfil p ON u.id_usuario = p.id_usuario
     WHERE p.id_nutricionista = ?
+    ORDER BY p.nombre
 ");
 $stmt->execute([$nutriId]);
 $pacientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -58,6 +62,13 @@ $stmtPend = $pdo->prepare("
 $stmtPend->execute([$nutriId]);
 $pendientes = $stmtPend->fetchAll(PDO::FETCH_ASSOC);
 
+// Cifras del panel
+$haceUnaSemana = date('Y-m-d', strtotime('-7 days'));
+$activosSemana = count(array_filter($pacientes, fn($p) => $p['ultimo_registro'] && $p['ultimo_registro'] >= $haceUnaSemana));
+$mediaPlan = $pacientes ? array_sum(array_column($pacientes, 'comidas_plan')) / count($pacientes) : 0;
+$cambios = array_filter(array_map(fn($p) => ($p['peso_inicial'] !== null && $p['peso_kg'] !== null) ? (float) $p['peso_kg'] - (float) $p['peso_inicial'] : null, $pacientes), fn($c) => $c !== null);
+$cambioMedio = $cambios ? array_sum($cambios) / count($cambios) : null;
+
 $objetivosTexto = [
     'perdida_rapida' => 'Pérdida rápida', 'perdida_moderada' => 'Pérdida moderada', 'perdida_grasa' => 'Pérdida de grasa',
     'mantenimiento' => 'Mantenimiento', 'ganancia_muscular' => 'Ganancia muscular',
@@ -75,7 +86,8 @@ include_once __DIR__ . '/../templates/header.php';
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Pacientes</h1>
+            <span class="k-pill"><?= icono('users') ?>Panel profesional</span>
+            <h1 class="k-title mt-3">Pacientes</h1>
             <p class="k-subtitle">Entra en la cuenta de un paciente para ajustar su plan, sus recetas y su perfil como si fueras él.</p>
         </div>
     </div>
@@ -85,6 +97,26 @@ include_once __DIR__ . '/../templates/header.php';
         if (($_GET[$param] ?? null) === $valor): ?>
             <div class="k-alert k-alert-<?= $tipo ?> mb-6"><?= icono($tipo === 'ok' ? 'check' : 'alert') ?><p><?= e($texto) ?></p></div>
     <?php endif; endforeach; ?>
+
+    <!-- CIFRAS -->
+    <div class="mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="hidden sm:grid k-icon-tile"><?= icono('users') ?></span>
+            <div><p class="k-stat-label">Pacientes</p><p class="k-stat-value"><?= (int) $numPacientes ?></p></div>
+        </div>
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="hidden sm:grid k-icon-tile k-tile-amber"><?= icono('mail') ?></span>
+            <div><p class="k-stat-label">Invitaciones pendientes</p><p class="k-stat-value"><?= count($pendientes) ?></p></div>
+        </div>
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="hidden sm:grid k-icon-tile k-tile-indigo"><?= icono('activity') ?></span>
+            <div><p class="k-stat-label">Se han pesado esta semana</p><p class="k-stat-value"><?= $activosSemana ?><span class="k-stat-unit">de <?= count($pacientes) ?></span></p></div>
+        </div>
+        <div class="k-card flex items-center gap-4 p-5">
+            <span class="hidden sm:grid k-icon-tile k-tile-rose"><?= icono('trend-down') ?></span>
+            <div><p class="k-stat-label">Cambio medio de peso</p><p class="k-stat-value"><?= $cambioMedio !== null ? ($cambioMedio > 0 ? '+' : '') . number_format($cambioMedio, 1, ',', '.') : '—' ?><span class="k-stat-unit">kg</span></p></div>
+        </div>
+    </div>
 
     <div class="grid items-start gap-6 lg:grid-cols-3">
         <!-- LISTADO -->
@@ -115,9 +147,20 @@ include_once __DIR__ . '/../templates/header.php';
                             <div class="min-w-0 flex-1">
                                 <p class="nombre-paciente truncate font-medium k-strong"><?= e($p['nombre'] ?: 'Sin nombre') ?></p>
                                 <p class="correo-paciente truncate text-sm k-muted"><?= e($p['correo']) ?></p>
+                                <p class="mt-0.5 text-xs k-muted"><?= $p['ultimo_registro'] ? 'Último registro: ' . e(formatearFecha($p['ultimo_registro'])) : 'Aún no ha registrado su peso' ?></p>
                             </div>
-                            <div class="hidden text-right text-sm sm:block">
-                                <p class="tabular-nums k-strong"><?= !empty($p['peso_kg']) ? e(number_format((float) $p['peso_kg'], 1, ',', '')) . ' kg' : '—' ?></p>
+                            <div class="hidden w-28 md:block" title="Comidas planificadas esta semana">
+                                <p class="text-xs k-muted">Plan <span class="tabular-nums k-strong"><?= (int) $p['comidas_plan'] ?>/35</span></p>
+                                <div class="k-track mt-1.5 h-1.5"><div class="k-bar" style="width: <?= min(100, round($p['comidas_plan'] / 35 * 100)) ?>%"></div></div>
+                            </div>
+                            <div class="hidden w-32 text-right text-sm sm:block">
+                                <p class="flex items-center justify-end gap-2 tabular-nums k-strong">
+                                    <?= !empty($p['peso_kg']) ? e(number_format((float) $p['peso_kg'], 1, ',', '')) . ' kg' : '—' ?>
+                                    <?php if ($p['peso_inicial'] !== null && !empty($p['peso_kg']) && (float) $p['peso_kg'] != (float) $p['peso_inicial']):
+                                        $dif = (float) $p['peso_kg'] - (float) $p['peso_inicial']; ?>
+                                        <span class="k-delta <?= $dif < 0 ? 'k-delta-ok' : 'k-delta-warn' ?>"><?= ($dif > 0 ? '+' : '') . number_format($dif, 1, ',', '') ?></span>
+                                    <?php endif; ?>
+                                </p>
                                 <p class="text-xs k-muted"><?= e($objetivosTexto[$p['objetivo'] ?? ''] ?? 'Sin objetivo') ?></p>
                             </div>
                             <form method="POST" action="entrar_como_paciente.php" class="m-0 shrink-0">

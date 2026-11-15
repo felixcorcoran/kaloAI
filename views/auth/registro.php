@@ -113,11 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 include_once __DIR__ . '/../templates/header.php'; 
 ?>
 
-<div class="k-container flex min-h-[calc(100vh-12rem)] items-center justify-center py-12">
-    <div class="w-full max-w-md">
-        <div class="mb-8 text-center">
-            <h1 class="font-display text-2xl font-bold tracking-tight text-gray-900">Crea tu cuenta</h1>
-            <p class="mt-1 text-sm text-gray-500">Gratis. Luego completas tu perfil y KaloAI calcula tus objetivos.</p>
+<div class="k-container grid min-h-[calc(100vh-12rem)] items-stretch gap-10 py-10 lg:grid-cols-2 lg:py-14">
+    <div class="mx-auto flex w-full max-w-md flex-col justify-center">
+        <div class="mb-8">
+            <h1 class="k-title">Crea tu cuenta</h1>
+            <p class="k-subtitle">Gratis. Luego completas tu perfil y KaloAI calcula tus objetivos.</p>
         </div>
 
         <?php if ($message): ?>
@@ -151,13 +151,14 @@ include_once __DIR__ . '/../templates/header.php';
             </div>
             <p class="k-hint !mt-1">Mínimo 8 caracteres.</p>
             <button type="submit" class="k-btn k-btn-primary w-full">Crear cuenta</button>
-            <p class="text-center text-xs text-gray-500">Al registrarte aceptas la <a href="<?= BASE_URL ?>public/privacidad.php" class="underline">política de privacidad</a>.</p>
+            <p class="text-center text-xs k-muted">Al registrarte aceptas la <a href="<?= BASE_URL ?>public/privacidad.php" class="underline">política de privacidad</a>.</p>
         </form>
 
-        <p class="mt-6 text-center text-sm text-gray-500">
-            ¿Ya tienes cuenta? <a href="login.php" class="font-semibold text-teal-700 hover:underline">Entra</a>
+        <p class="mt-6 text-sm k-muted">
+            ¿Ya tienes cuenta? <a href="login.php" class="k-link">Entra</a>
         </p>
     </div>
+    <?php include __DIR__ . '/../templates/auth_lateral.php'; ?>
 </div>
 
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

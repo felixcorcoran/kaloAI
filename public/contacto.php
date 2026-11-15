@@ -16,14 +16,14 @@ include_once __DIR__ . '/../views/templates/header.php';
 <div class="k-container max-w-5xl py-12 sm:py-16">
     <div class="grid gap-10 md:grid-cols-2">
         <div>
-            <p class="k-eyebrow">Contacto</p>
-            <h1 class="mt-2 font-display text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">¿En qué podemos ayudarte?</h1>
-            <p class="mt-4 text-lg leading-relaxed text-gray-600">Dudas sobre tu plan, un problema con la cuenta o una petición sobre tus datos: escríbenos y te respondemos.</p>
+            <span class="k-pill">Contacto</span>
+            <h1 class="mt-2 font-display text-3xl font-bold tracking-tight k-strong sm:text-4xl">¿En qué podemos ayudarte?</h1>
+            <p class="mt-4 text-lg leading-relaxed k-muted">Dudas sobre tu plan, un problema con la cuenta o una petición sobre tus datos: escríbenos y te respondemos.</p>
             <a href="mailto:soporte@kaloai.com" class="k-card k-card-link mt-8 flex items-center gap-4 p-5">
                 <span class="k-icon-tile"><?= icono('mail') ?></span>
                 <span>
-                    <span class="block text-xs font-medium text-gray-500">Correo</span>
-                    <span class="block font-semibold text-gray-900">soporte@kaloai.com</span>
+                    <span class="block text-xs font-medium k-muted">Correo</span>
+                    <span class="block font-semibold k-strong">soporte@kaloai.com</span>
                 </span>
             </a>
         </div>

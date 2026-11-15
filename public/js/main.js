@@ -280,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Listados con buscador
     prepararFiltroDeFilas('realTimeSearch', '.user-row', 'sinUsuarios', 'roleFilter');
     prepararFiltroDeFilas('buscadorPaciente', '.fila-paciente', 'noResultados');
+    prepararFiltroDeFilas('buscadorDespensa', '.fila-despensa', 'sinIngredientes');
 
     // Generador con IA: pantalla de espera mientras responde la API
     const formularioIA = document.getElementById('formGeneradorIA');
@@ -298,6 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iniciarRestricciones();
     iniciarProgreso();
     iniciarGraficoPanel();
+    iniciarGraficoAdmin();
     iniciarCarrusel();
 });
 
@@ -379,21 +381,23 @@ function colorMarca() {
 }
 
 /** Gráfico de línea de peso en un <canvas>. */
-function graficoPeso(lienzo, datos, conEjes) {
-    if (!window.Chart || !lienzo || datos.length < 2) return;
-    const color = colorMarca();
+function graficoPeso(lienzo, datos, conEjes, campo = 'peso_kg', unidad = 'kg', colorLinea = null) {
+    if (!window.Chart || !lienzo) return;
+    datos = datos.filter(d => d[campo] !== null && d[campo] !== '' && parseFloat(d[campo]) > 0);
+    if (datos.length < 2) return;
+    const color = colorLinea || colorMarca();
     const contexto = lienzo.getContext('2d');
     const degradado = contexto.createLinearGradient(0, 0, 0, lienzo.clientHeight || 240);
-    degradado.addColorStop(0, color + '40');
+    degradado.addColorStop(0, color + (conEjes ? '33' : '26'));
     degradado.addColorStop(1, color + '00');
-    const pesos = datos.map(d => parseFloat(d.peso_kg));
+    const pesos = datos.map(d => parseFloat(d[campo]));
 
     new Chart(contexto, {
         type: 'line',
         data: {
             labels: datos.map(d => d.fecha),
-            datasets: [{ data: pesos, borderColor: color, borderWidth: 2.5, backgroundColor: degradado, fill: true, tension: 0.35,
-                         pointRadius: conEjes ? 3 : 0, pointHoverRadius: 5, pointBackgroundColor: color }],
+            datasets: [{ data: pesos, borderColor: color, borderWidth: 2, backgroundColor: degradado, fill: true, tension: 0.4,
+                         pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: color }],
         },
         options: {
             responsive: true,
@@ -405,21 +409,25 @@ function graficoPeso(lienzo, datos, conEjes) {
                     displayColors: false,
                     callbacks: {
                         title: c => new Date(c[0].label).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }),
-                        label: c => c.raw + ' kg',
+                        label: c => String(c.raw).replace('.', ',') + ' ' + unidad,
                     },
                 },
             },
             scales: {
-                x: { display: conEjes, grid: { display: false },
+                x: { display: conEjes, grid: { display: false }, border: { display: false },
                      ticks: { maxTicksLimit: 6, callback(v) { return new Date(this.getLabelForValue(v)).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); } } },
-                y: { display: conEjes, suggestedMin: Math.min(...pesos) - 1, suggestedMax: Math.max(...pesos) + 1, ticks: { maxTicksLimit: 5 } },
+                y: { display: conEjes, suggestedMin: Math.min(...pesos) - 1, suggestedMax: Math.max(...pesos) + 1, ticks: { maxTicksLimit: 4 },
+                     border: { display: false }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
             },
         },
     });
 }
 
 function iniciarProgreso() {
-    if (window.progresoData) graficoPeso(document.getElementById('sparklineChart'), window.progresoData, true);
+    if (window.progresoData) {
+        graficoPeso(document.getElementById('sparklineChart'), window.progresoData, true);
+        graficoPeso(document.getElementById('cinturaChart'), window.progresoData, true, 'cintura_cm', 'cm', varCss('--k-indigo', '#6366f1'));
+    }
 
     // Borrar un registro: el botón lleva la fecha en data-fecha
     document.querySelectorAll('.btn-delete-progreso').forEach(boton => {
@@ -431,8 +439,102 @@ function iniciarProgreso() {
     });
 }
 
+/** Valor de una variable CSS del tema actual (claro u oscuro). */
+function varCss(nombre, porDefecto) {
+    return getComputedStyle(document.documentElement).getPropertyValue(nombre).trim() || porDefecto;
+}
+
+/** Panel de administración: barras con las altas de cada mes. */
+function iniciarGraficoAdmin() {
+    const datos = window.adminData;
+    const lienzo = document.getElementById('altasChart');
+    if (!datos || !lienzo || !window.Chart) return;
+    const ctx = lienzo.getContext('2d');
+    const indigo = varCss('--k-indigo', '#6366f1');
+    const degradado = ctx.createLinearGradient(0, 0, 0, lienzo.clientHeight || 224);
+    degradado.addColorStop(0, indigo);
+    degradado.addColorStop(1, indigo + '55');
+    const ultimo = datos.altas.length - 1;
+    new Chart(ctx, {
+        type: 'bar',
+        data: { labels: datos.etiquetas, datasets: [{ data: datos.altas, borderRadius: 10, borderSkipped: false, barPercentage: 0.55, maxBarThickness: 56,
+                backgroundColor: datos.altas.map((_, i) => i === ultimo ? colorMarca() : degradado) }] },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => c.raw + (c.raw === 1 ? ' alta' : ' altas') } } },
+            scales: {
+                x: { grid: { display: false }, border: { display: false } },
+                y: { beginAtZero: true, ticks: { precision: 0, maxTicksLimit: 4 }, border: { display: false }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
+            },
+        },
+    });
+}
+
 function iniciarGraficoPanel() {
-    if (window.dashboardData) graficoPeso(document.getElementById('progressChart'), window.dashboardData.progreso || [], false);
+    const datos = window.dashboardData;
+    if (!datos || !window.Chart) return;
+    graficoPeso(document.getElementById('progressChart'), datos.progreso || [], true);
+    graficoPeso(document.getElementById('pesoMini'), datos.progreso || [], false);
+
+    // Calorías de cada día: barras redondeadas (hoy en color de marca) y línea de objetivo
+    const lienzoSemana = document.getElementById('semanaChart');
+    if (lienzoSemana) {
+        const ctx = lienzoSemana.getContext('2d');
+        const indigo = varCss('--k-indigo', '#6366f1');
+        const marca = colorMarca();
+        const degradado = ctx.createLinearGradient(0, 0, 0, lienzoSemana.clientHeight || 256);
+        degradado.addColorStop(0, indigo);
+        degradado.addColorStop(1, indigo + '55');
+        const conjuntos = [{
+            type: 'bar',
+            data: datos.semana,
+            backgroundColor: datos.semana.map((_, i) => i === datos.hoy ? marca : degradado),
+            borderRadius: 10,
+            borderSkipped: false,
+            barPercentage: 0.62,
+            categoryPercentage: 0.8,
+            order: 2,
+        }];
+        if (datos.meta > 0) {
+            conjuntos.push({
+                type: 'line', label: 'Objetivo', data: datos.semana.map(() => datos.meta),
+                borderColor: varCss('--k-muted', '#71717a'), borderDash: [5, 5], borderWidth: 1.5,
+                pointRadius: 0, pointHoverRadius: 0, order: 1,
+            });
+        }
+        new Chart(ctx, {
+            data: { labels: datos.dias, datasets: conjuntos },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => Math.round(c.raw) + ' kcal' + (c.dataset.label ? ' (objetivo)' : '') } } },
+                scales: {
+                    x: { grid: { display: false }, border: { display: false } },
+                    y: { beginAtZero: true, border: { display: false }, ticks: { maxTicksLimit: 5 }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
+                },
+            },
+        });
+    }
+
+    // Reparto de calorías de hoy entre proteína, carbohidratos y grasa
+    const lienzoMacros = document.getElementById('macrosChart');
+    if (lienzoMacros) {
+        const hayDatos = datos.macros.some(v => v > 0);
+        new Chart(lienzoMacros, {
+            type: 'doughnut',
+            data: {
+                labels: ['Proteína', 'Carbohidratos', 'Grasa'],
+                datasets: [{
+                    data: hayDatos ? datos.macros : [1],
+                    backgroundColor: hayDatos ? [varCss('--k-prot', '#3b82f6'), varCss('--k-carb', '#f59e0b'), varCss('--k-fat', '#f43f5e')] : [varCss('--k-surface-3', '#e5e5e5')],
+                    borderWidth: 0, spacing: hayDatos ? 3 : 0, borderRadius: 6,
+                }],
+            },
+            options: {
+                cutout: '78%', responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: hayDatos, displayColors: false, callbacks: { label: c => c.label + ': ' + c.raw + ' kcal' } } },
+            },
+        });
+    }
 }
 
 /* ==========================================================================

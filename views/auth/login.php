@@ -75,11 +75,11 @@ $pageTitle = "KaloAI | Entrar";
 include_once __DIR__ . '/../templates/header.php';
 ?>
 
-<div class="k-container flex min-h-[calc(100vh-12rem)] items-center justify-center py-12">
-    <div class="w-full max-w-sm">
-        <div class="mb-8 text-center">
-            <h1 class="font-display text-2xl font-bold tracking-tight text-gray-900">Hola de nuevo</h1>
-            <p class="mt-1 text-sm text-gray-500">Entra para ver tu plan de hoy.</p>
+<div class="k-container grid min-h-[calc(100vh-12rem)] items-stretch gap-10 py-10 lg:grid-cols-2 lg:py-14">
+    <div class="mx-auto flex w-full max-w-sm flex-col justify-center">
+        <div class="mb-8">
+            <h1 class="k-title">Hola de nuevo</h1>
+            <p class="k-subtitle">Entra para ver tu plan de hoy.</p>
         </div>
 
         <?php if (isset($_GET['loggedout'])): ?>
@@ -102,10 +102,11 @@ include_once __DIR__ . '/../templates/header.php';
             <button type="submit" class="k-btn k-btn-primary w-full">Entrar</button>
         </form>
 
-        <p class="mt-6 text-center text-sm text-gray-500">
-            ¿No tienes cuenta? <a href="registro.php" class="font-semibold text-teal-700 hover:underline">Crea una gratis</a>
+        <p class="mt-6 text-sm k-muted">
+            ¿No tienes cuenta? <a href="registro.php" class="k-link">Crea una gratis</a>
         </p>
     </div>
+    <?php include __DIR__ . '/../templates/auth_lateral.php'; ?>
 </div>
 
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

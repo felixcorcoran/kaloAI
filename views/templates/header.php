@@ -58,25 +58,29 @@ $seccionesUsuario = [
     ['Progreso', 'trend-up', 'views/user/progreso.php',              ['progreso.php']],
     ['Perfil',   'user',     'views/user/perfil.php',                ['perfil.php']],
 ];
-$secciones = match ($rol) {
+// Paneles de trabajo de administración y nutricionista
+$seccionesEquipo = match ($rol) {
     1 => [
         ['Usuarios',  'shield', 'views/admin/dashboard_admin.php', ['dashboard_admin.php']],
         ['Pacientes', 'users',  'views/nutri/dashboard_nutri.php', ['dashboard_nutri.php']],
-        ['Mi plan',   'home',   'views/dashboard.php',             ['dashboard.php']],
     ],
     2 => [
         ['Pacientes', 'users', 'views/nutri/dashboard_nutri.php', ['dashboard_nutri.php']],
-        ['Mi plan',   'home',  'views/dashboard.php',             ['dashboard.php']],
     ],
-    default => $seccionesUsuario,
+    default => [],
 };
+// Grupos de la navegación: [título del grupo, secciones]. Todos los roles
+// tienen su propio plan; admin y nutricionista, además, sus paneles.
+$gruposNavegacion = $seccionesEquipo
+    ? [['Trabajo', $seccionesEquipo], ['Mi plan', $seccionesUsuario]]
+    : [[null, $seccionesUsuario]];
+$nombreRol = [1 => 'Administración', 2 => 'Nutricionista', 3 => 'Usuario'][$rol] ?? '';
 
-$pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaActual) {
-    foreach ($secciones as [$texto, $icono, $ruta, $paginas]) {
-        $activa = in_array($paginaActual, $paginas, true);
-        echo '<a href="' . e(BASE_URL . $ruta) . '" class="k-nav-link ' . $claseExtra . '"' . ($activa ? ' aria-current="page"' : '') . '>'
-            . icono($icono) . '<span>' . e($texto) . '</span></a>';
-    }
+$pintarEnlace = function (array $seccion) use ($paginaActual) {
+    [$texto, $icono, $ruta, $paginas] = $seccion;
+    $activa = in_array($paginaActual, $paginas, true);
+    echo '<a href="' . e(BASE_URL . $ruta) . '" class="k-nav-link"' . ($activa ? ' aria-current="page"' : '') . '>'
+        . icono($icono) . '<span>' . e($texto) . '</span></a>';
 };
 ?>
 <!DOCTYPE html>
@@ -100,10 +104,10 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
 
-    <!-- Tipografías: Inter (texto) y Plus Jakarta Sans (titulares, clase font-display) -->
+    <!-- Tipografías: DM Sans (aplicación) e Inter / Plus Jakarta Sans (estilos propios de la portada) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="<?= BASE_URL ?>public/css/style.css">
@@ -114,68 +118,68 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
     <!-- Modo oscuro de las clases de Tailwind de la portada (después de Tailwind para ganarle) -->
     <link rel="stylesheet" href="<?= BASE_URL ?>public/css/oscuro.css">
 
-    <?php if ($impersonando): ?>
-        <!-- Modo gestión: el nutricionista está dentro de la cuenta de un paciente -->
-        <div class="sticky top-0 z-50 bg-amber-500 text-amber-950">
-            <div class="k-container flex h-11 items-center justify-between gap-4 text-sm">
-                <p class="flex min-w-0 items-center gap-2 font-medium">
-                    <?= icono('eye', 'h-4 w-4 shrink-0') ?>
-                    <span class="truncate">Estás gestionando la cuenta de <strong class="font-semibold"><?= e($userName) ?></strong></span>
-                </p>
-                <form method="POST" action="<?= BASE_URL ?>views/nutri/salir_paciente.php" class="m-0 shrink-0">
-                    <?= campoCsrf() ?>
-                    <button type="submit" class="rounded-lg bg-amber-950/10 px-3 py-1.5 text-xs font-semibold transition hover:bg-amber-950/20">
-                        Finalizar gestión
-                    </button>
-                </form>
-            </div>
-        </div>
-    <?php endif; ?>
-
     <?php if ($modoApp): ?>
-        <!-- CABECERA DE LA APLICACIÓN -->
-        <header class="sticky <?= $impersonando ? 'top-11' : 'top-0' ?> z-40 border-b backdrop-blur-xl" style="background-color: color-mix(in srgb, var(--k-surface) 85%, transparent); border-color: var(--k-border);">
-            <div class="k-container flex h-16 items-center gap-4 lg:gap-8">
-                <a href="<?= e($urlInicio) ?>" class="shrink-0 rounded-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-200">
-                    <img src="<?= BASE_URL ?>images/logo.png" class="h-8 w-auto" alt="KaloAI">
-                </a>
-
-                <nav class="hidden flex-1 items-center gap-1 lg:flex" aria-label="Secciones">
-                    <?php $pintarNavegacion(); ?>
-                </nav>
-
-                <div class="ml-auto flex items-center gap-1">
-                    <button type="button" id="kalo-tema" class="k-btn k-btn-ghost k-btn-icon" aria-label="Cambiar a modo oscuro" title="Modo oscuro">
-                        <?= icono('moon', 'kalo-luna') ?><?= icono('sun', 'kalo-sol') ?>
-                    </button>
-
-                    <!-- Menú de la cuenta (sin JavaScript: <details>) -->
-                    <details class="relative" id="menu-cuenta">
-                        <summary class="flex cursor-pointer list-none items-center gap-2 rounded-xl p-1 pr-2 transition hover:bg-[color:var(--k-surface-2)] [&::-webkit-details-marker]:hidden">
-                            <span class="k-avatar" aria-hidden="true"><?= e($inicial) ?></span>
-                            <span class="hidden max-w-[10rem] truncate text-sm font-medium sm:block k-strong"><?= e($userName) ?></span>
-                            <?= icono('chevron-down', 'h-4 w-4 k-muted') ?>
-                        </summary>
-                        <div class="k-card absolute right-0 mt-2 w-56 p-1.5" style="box-shadow: var(--k-shadow-lg);">
-                            <p class="truncate px-3 pb-2 pt-1.5 text-xs k-muted"><?= e($userName) ?></p>
-                            <?php if ($rol === 3): ?>
-                                <a href="<?= BASE_URL ?>views/user/perfil.php" class="k-nav-link w-full"><?= icono('user') ?>Mi perfil</a>
-                            <?php endif; ?>
-                            <a href="<?= BASE_URL ?>index.php" class="k-nav-link w-full"><?= icono('home') ?>Ir a la portada</a>
-                            <div class="k-divider my-1"></div>
-                            <a href="<?= BASE_URL ?>views/auth/logout.php" class="k-nav-link w-full hover:!text-red-600"><?= icono('log-out') ?>Cerrar sesión</a>
-                        </div>
-                    </details>
+        <!-- BARRA LATERAL (escritorio) -->
+        <aside class="k-sidebar" aria-label="Navegación">
+            <a href="<?= e($urlInicio) ?>" class="flex h-16 shrink-0 items-center px-5">
+                <img src="<?= BASE_URL ?>images/logo.png" class="h-8 w-auto" alt="KaloAI">
+            </a>
+            <nav class="flex-1 overflow-y-auto px-3 pb-4">
+                <?php foreach ($gruposNavegacion as [$tituloGrupo, $seccionesGrupo]): ?>
+                    <?php if ($tituloGrupo): ?><p class="k-nav-group"><?= e($tituloGrupo) ?></p><?php endif; ?>
+                    <div class="flex flex-col gap-0.5"><?php foreach ($seccionesGrupo as $seccion) $pintarEnlace($seccion); ?></div>
+                <?php endforeach; ?>
+            </nav>
+            <div class="space-y-1 border-t p-3" style="border-color: var(--k-border);">
+                <button type="button" class="js-tema k-nav-link w-full" aria-label="Cambiar a modo oscuro">
+                    <?= icono('moon', 'kalo-luna') ?><?= icono('sun', 'kalo-sol') ?><span class="js-tema-texto">Modo oscuro</span>
+                </button>
+                <div class="flex items-center gap-3 rounded-xl px-2 py-2">
+                    <span class="k-avatar" aria-hidden="true"><?= e($inicial) ?></span>
+                    <a href="<?= BASE_URL ?>views/user/perfil.php" class="min-w-0 flex-1">
+                        <span class="block truncate text-sm font-medium k-strong"><?= e($userName) ?></span>
+                        <span class="block truncate text-xs k-muted"><?= e($nombreRol) ?></span>
+                    </a>
+                    <a href="<?= BASE_URL ?>views/auth/logout.php" class="k-btn k-btn-ghost k-btn-icon" title="Cerrar sesión" aria-label="Cerrar sesión"><?= icono('log-out') ?></a>
                 </div>
             </div>
+        </aside>
 
-            <!-- Navegación en móvil y tableta: fila deslizable -->
-            <nav class="-mt-px overflow-x-auto border-t lg:hidden" style="border-color: var(--k-border);" aria-label="Secciones">
-                <div class="k-container flex w-max min-w-full gap-1 py-2">
-                    <?php $pintarNavegacion(); ?>
+        <div class="k-with-sidebar flex min-h-screen flex-col">
+            <?php if ($impersonando): ?>
+                <!-- Modo gestión: el nutricionista está dentro de la cuenta de un paciente -->
+                <div class="sticky top-0 z-50 border-b border-amber-500/30 bg-amber-400 text-amber-950">
+                    <div class="k-container flex h-11 items-center justify-between gap-4 text-sm">
+                        <p class="flex min-w-0 items-center gap-2 font-medium">
+                            <?= icono('eye', 'h-4 w-4 shrink-0') ?>
+                            <span class="truncate">Estás gestionando la cuenta de <strong class="font-semibold"><?= e($userName) ?></strong></span>
+                        </p>
+                        <form method="POST" action="<?= BASE_URL ?>views/nutri/salir_paciente.php" class="m-0 shrink-0">
+                            <?= campoCsrf() ?>
+                            <button type="submit" class="rounded-full bg-amber-950 px-3.5 py-1.5 text-xs font-medium text-amber-50 transition hover:bg-amber-900">Finalizar gestión</button>
+                        </form>
+                    </div>
                 </div>
-            </nav>
-        </header>
+            <?php endif; ?>
+
+            <!-- CABECERA EN MÓVIL Y TABLETA -->
+            <header class="sticky <?= $impersonando ? 'top-11' : 'top-0' ?> z-40 border-b backdrop-blur-xl lg:hidden" style="background-color: color-mix(in srgb, var(--k-bg) 85%, transparent); border-color: var(--k-border);">
+                <div class="k-container flex h-14 items-center gap-3">
+                    <a href="<?= e($urlInicio) ?>" class="shrink-0"><img src="<?= BASE_URL ?>images/logo.png" class="h-7 w-auto" alt="KaloAI"></a>
+                    <div class="ml-auto flex items-center gap-1">
+                        <button type="button" class="js-tema k-btn k-btn-ghost k-btn-icon" aria-label="Cambiar a modo oscuro">
+                            <?= icono('moon', 'kalo-luna') ?><?= icono('sun', 'kalo-sol') ?>
+                        </button>
+                        <a href="<?= BASE_URL ?>views/user/perfil.php" class="k-avatar h-8 w-8 text-xs" aria-label="Mi perfil"><?= e($inicial) ?></a>
+                        <a href="<?= BASE_URL ?>views/auth/logout.php" class="k-btn k-btn-ghost k-btn-icon" aria-label="Cerrar sesión"><?= icono('log-out') ?></a>
+                    </div>
+                </div>
+                <nav class="-mt-px overflow-x-auto border-t" style="border-color: var(--k-border);" aria-label="Secciones">
+                    <div class="k-container flex w-max min-w-full gap-1 py-2">
+                        <?php foreach ($gruposNavegacion as [, $seccionesGrupo]) foreach ($seccionesGrupo as $seccion) $pintarEnlace($seccion); ?>
+                    </div>
+                </nav>
+            </header>
     <?php else: ?>
         <!-- CABECERA PÚBLICA -->
         <header class="sticky <?= $impersonando ? 'top-11' : 'top-0' ?> z-40 border-b border-gray-900/5 bg-white/75 backdrop-blur-xl backdrop-saturate-150">
@@ -185,7 +189,7 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
                 </a>
 
                 <div class="flex items-center gap-2 sm:gap-3">
-                    <button type="button" id="kalo-tema" class="grid h-11 w-11 place-items-center rounded-full text-gray-500 transition-colors hover:bg-teal-50 hover:text-teal-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-100" aria-label="Cambiar a modo oscuro" title="Modo oscuro">
+                    <button type="button" class="js-tema grid h-11 w-11 place-items-center rounded-full text-gray-500 transition-colors hover:bg-teal-50 hover:text-teal-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-100" aria-label="Cambiar a modo oscuro" title="Modo oscuro">
                         <?= icono('moon', 'kalo-luna h-5 w-5') ?><?= icono('sun', 'kalo-sol h-5 w-5') ?>
                     </button>
 
@@ -203,20 +207,25 @@ $pintarNavegacion = function (string $claseExtra = '') use ($secciones, $paginaA
     <?php endif; ?>
 
     <script>
-        // Botón de tema: alterna claro / oscuro y lo recuerda (views/templates/tema.php)
+        // Botones de tema: alternan claro / oscuro y lo recuerdan (views/templates/tema.php)
         (function () {
-            var boton = document.getElementById('kalo-tema');
             var raiz = document.documentElement;
+            var botones = document.querySelectorAll('.js-tema');
             var rotular = function () {
                 var oscuro = raiz.classList.contains('dark');
-                boton.setAttribute('aria-label', oscuro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
-                boton.title = oscuro ? 'Modo claro' : 'Modo oscuro';
+                botones.forEach(function (b) {
+                    b.setAttribute('aria-label', oscuro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
+                    var texto = b.querySelector('.js-tema-texto');
+                    if (texto) texto.textContent = oscuro ? 'Modo claro' : 'Modo oscuro';
+                });
             };
             rotular();
-            boton.addEventListener('click', function () {
-                var oscuro = raiz.classList.toggle('dark');
-                try { localStorage.setItem('kalo-tema', oscuro ? 'oscuro' : 'claro'); } catch (e) {}
-                rotular();
+            botones.forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var oscuro = raiz.classList.toggle('dark');
+                    try { localStorage.setItem('kalo-tema', oscuro ? 'oscuro' : 'claro'); } catch (e) {}
+                    rotular();
+                });
             });
         })();
     </script>

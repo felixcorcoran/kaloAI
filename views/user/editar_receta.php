@@ -50,7 +50,8 @@ include_once __DIR__ . '/../templates/header.php';
     <a href="detalle_receta.php?id=<?= (int) $receta['id_receta'] ?>" class="k-back"><?= icono('chevron-left', 'h-4 w-4') ?>Volver a la receta</a>
     <div class="k-page-head">
         <div>
-            <h1 class="k-title">Editar receta</h1>
+            <span class="k-pill"><?= icono('pencil') ?>Editando</span>
+            <h1 class="k-title mt-3">Editar receta</h1>
             <p class="k-subtitle"><?= e($receta['titulo']) ?></p>
         </div>
     </div>
