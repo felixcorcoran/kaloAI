@@ -53,9 +53,11 @@ INSERT INTO detalle_receta (id_receta, nombre_ingrediente, cantidad, unidad) VAL
   (3, 'Huevo', 3, 'unidad'), (3, 'Lechuga', 80, 'g'), (3, 'Tomate', 100, 'g'),
   (3, 'Aceite De Oliva', 10, 'ml');
 
--- Un único plan por persona; la fecha marca el lunes de la semana en que se creó
+-- Un plan por persona y semana; la fecha es el lunes de esa semana.
+-- Laura tiene el de esta semana (1) y el de la semana pasada (2).
 INSERT INTO plan_semanal (id_plan, id_usuario, fecha_inicio_semana) VALUES
-  (1, 3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY));
+  (1, 3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)),
+  (2, 3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 7 DAY));
 
 -- dia_semana: 0 = lunes ... 6 = domingo. Rellena toda la semana para que "Hoy" siempre tenga datos.
 INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, raciones) VALUES
@@ -67,12 +69,38 @@ INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, 
   (1, 1, 5, 'Desayuno', 1), (1, 2, 5, 'Almuerzo', 1),
   (1, 1, 6, 'Desayuno', 1), (1, 3, 6, 'Cena', 1);
 
+-- La semana pasada: desayuno, almuerzo y cena de lunes a viernes
+INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, raciones) VALUES
+  (2, 1, 0, 'Desayuno', 1), (2, 2, 0, 'Almuerzo', 1), (2, 3, 0, 'Cena', 1),
+  (2, 1, 1, 'Desayuno', 1), (2, 2, 1, 'Almuerzo', 1), (2, 3, 1, 'Cena', 1),
+  (2, 1, 2, 'Desayuno', 1), (2, 2, 2, 'Almuerzo', 1), (2, 3, 2, 'Cena', 1),
+  (2, 1, 3, 'Desayuno', 1), (2, 2, 3, 'Almuerzo', 1), (2, 3, 3, 'Cena', 1),
+  (2, 1, 4, 'Desayuno', 1), (2, 2, 4, 'Almuerzo', 1), (2, 3, 4, 'Cena', 1);
+
 INSERT INTO progreso (id_usuario, fecha, peso_kg, cintura_cm, nota) VALUES
   (3, DATE_SUB(CURDATE(), INTERVAL 28 DAY), 66.80, 78.0, 'Empiezo el plan'),
   (3, DATE_SUB(CURDATE(), INTERVAL 21 DAY), 66.10, 77.5, NULL),
   (3, DATE_SUB(CURDATE(), INTERVAL 14 DAY), 65.40, 76.8, NULL),
   (3, DATE_SUB(CURDATE(), INTERVAL 7 DAY),  64.90, 76.2, 'Más energía en los entrenos'),
   (3, CURDATE(),                            64.50, 75.9, NULL);
+
+-- Lo que Laura comió la semana pasada (lunes a jueves; el viernes se saltó la cena)
+INSERT INTO registro_comida (id_usuario, fecha, momento_comida, id_receta, descripcion, calorias, proteinas_g, carbohidratos_g, grasas_g) VALUES
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 7 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 7 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 7 DAY), 'Cena',     3, 'Tortilla francesa con ensalada', 410, 26, 12, 28),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 6 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 6 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 6 DAY), 'Merienda', NULL, 'Tostada con aguacate', 260, 6, 24, 16),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 6 DAY), 'Cena',     3, 'Tortilla francesa con ensalada', 410, 26, 12, 28),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 5 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 5 DAY), 'Almuerzo', NULL, 'Menú del día en el trabajo', 950, 40, 105, 38),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 5 DAY), 'Cena',     3, 'Tortilla francesa con ensalada', 410, 26, 12, 28),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 4 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 4 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 4 DAY), 'Cena',     3, 'Tortilla francesa con ensalada', 410, 26, 12, 28),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 3 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 3 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14);
 
 -- Lo que Laura ha comido de verdad los últimos días (y el desayuno de hoy)
 INSERT INTO registro_comida (id_usuario, fecha, momento_comida, id_receta, descripcion, calorias, proteinas_g, carbohidratos_g, grasas_g) VALUES

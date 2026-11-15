@@ -32,6 +32,10 @@ $errorIA = null;
 $diaUrl = $_GET['dia'] ?? $_POST['dia_contexto'] ?? null;
 $diaUrl = diaANumero($diaUrl) !== null ? DIAS_SEMANA[diaANumero($diaUrl)] : null;
 $momentoUrl = momentoValido($_GET['momento'] ?? $_POST['momento_contexto'] ?? null);
+// Semana del plan en la que se trabaja (lunes); por defecto, la actual
+$semanaUrl = semanaValida($_GET['semana'] ?? $_POST['semana_contexto'] ?? null);
+$volverPlan = 'planificacion_semanal.php' . ($semanaUrl !== lunesDe() ? '?semana=' . $semanaUrl : '');
+$conSemana = fn(string $url) => $url . (str_contains($url, '?') ? '&' : '?') . 'semana=' . $semanaUrl;
 
 /* ==========================================================================
    3. VALIDACIÓN DE LÍMITE CALÓRICO
@@ -45,8 +49,8 @@ if ($diaUrl) {
                                 FROM comida_planificada cp 
                                 JOIN receta r ON cp.id_receta = r.id_receta 
                                 JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                                WHERE ps.id_usuario = ? AND cp.dia_semana = ?");
-    $stmtCheck->execute([$userId, $diaNum]);
+                                WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.dia_semana = ?");
+    $stmtCheck->execute([$userId, $semanaUrl, $diaNum]);
     $actual = $stmtCheck->fetch();
     $caloriasActuales = $actual['total'] ?? 0;
 
@@ -57,7 +61,7 @@ if ($diaUrl) {
 
     // Si excede el 110% de la meta, bloqueamos la generación para proteger el objetivo
     if ($caloriasActuales >= ($meta * 1.1)) {
-        header("Location: planificacion_semanal.php?error=limite_superado");
+        header("Location: " . $conSemana('planificacion_semanal.php?error=limite_superado'));
         exit;
     }
 }
@@ -77,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generar'])) {
     $momentoFinal = $momentoUrl ?: tipoRecetaParaMomento($_POST['tipo_comida_manual'] ?? 'Almuerzo');
 
     // Ejecución de la IA
-    $resultado = generarRecetaInteligente($userId, $soloInventario, $diaUrl, $momentoFinal, $sugerencia);
+    $resultado = generarRecetaInteligente($userId, $soloInventario, $diaUrl, $momentoFinal, $sugerencia, null, null, $semanaUrl);
 
     if (isset($resultado['error'])) {
         $errorIA = $resultado['error'];
@@ -88,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generar'])) {
         $_SESSION['receta_ia_pendiente'] = [
             'receta'  => $receta,
             'dia'     => $diaUrl,
+            'semana'  => $semanaUrl,
             'momento' => $momentoUrl ?: $momentoFinal,
         ];
     }
@@ -119,11 +124,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['seleccionar_existente
         // asignarRecetaAlPlan comprueba que la receta sea de esta persona y que
         // el día y el momento existan; crea el plan si aún no lo tiene
         $asignada = $idRecetaSel && $diaNumero !== null && $momentoUrl
-            && asignarRecetaAlPlan($pdo, (int) $userId, $idRecetaSel, $diaNumero, $momentoUrl);
+            && asignarRecetaAlPlan($pdo, (int) $userId, $idRecetaSel, $diaNumero, $momentoUrl, $semanaUrl);
         $pdo->commit();
 
         if ($asignada) {
-            header("Location: planificacion_semanal.php?success=assigned");
+            header("Location: " . $conSemana('planificacion_semanal.php?success=assigned'));
             exit;
         }
         $errorIA = "No se pudo añadir esa receta al plan.";
@@ -165,12 +170,12 @@ if ($enPlan && $metaDiaria) {
 ?>
 
 <div class="k-container k-page">
-    <a href="<?= $diaUrl ? 'planificacion_semanal.php' : 'mis_recetas.php' ?>" class="k-back">
+    <a href="<?= $diaUrl ? e($volverPlan) : 'mis_recetas.php' ?>" class="k-back">
         <?= icono('chevron-left', 'h-4 w-4') ?><?= $diaUrl ? 'Plan semanal' : 'Mis recetas' ?>
     </a>
     <div class="k-page-head">
         <div>
-            <span class="k-pill"><?= icono('sparkles') ?><?= $enPlan ? e($momentoUrl . ' · ' . $diaUrl) : 'Chef IA' ?></span>
+            <span class="k-pill"><?= icono('sparkles') ?><?= $enPlan ? e($momentoUrl . ' · ' . $diaUrl . ($semanaUrl !== lunesDe() ? ' · ' . nombreSemana($semanaUrl) : '')) : 'Chef IA' ?></span>
             <h1 class="k-title mt-3">Generar receta con IA</h1>
             <p class="k-subtitle">
                 <?php if ($enPlan): ?>
@@ -191,6 +196,7 @@ if ($enPlan && $metaDiaria) {
         <form id="formGeneradorIA" method="POST" class="k-card k-card-pad space-y-6 lg:sticky lg:top-24 lg:col-span-2">
             <?= campoCsrf() ?>
             <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
+            <input type="hidden" name="semana_contexto" value="<?= e($semanaUrl) ?>">
             <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
 
             <?php if (!$momentoUrl): ?>
@@ -344,6 +350,7 @@ if ($enPlan && $metaDiaria) {
                                         <?= campoCsrf() ?>
                                         <input type="hidden" name="id_receta_seleccionada" value="<?= (int) $r['id_receta'] ?>">
                                         <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
+                                        <input type="hidden" name="semana_contexto" value="<?= e($semanaUrl) ?>">
                                         <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
                                         <button type="submit" name="seleccionar_existente" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>Usar</button>
                                     </form>

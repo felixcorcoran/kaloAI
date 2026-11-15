@@ -39,14 +39,15 @@ try {
     // Si se venía de un hueco del calendario, la receta se coloca ahí
     $planificada = false;
     if ($diaNumero !== null && momentoValido($momento)) {
-        $planificada = asignarRecetaAlPlan($pdo, $userId, $idReceta, $diaNumero, $momento);
+        $planificada = asignarRecetaAlPlan($pdo, $userId, $idReceta, $diaNumero, $momento, semanaValida($pendiente['semana'] ?? null));
     }
 
     $pdo->commit();
     unset($_SESSION['receta_ia_pendiente']); // evita guardarla dos veces
 
     $_SESSION['mensaje'] = "Receta guardada correctamente.";
-    header("Location: " . ($planificada ? "planificacion_semanal.php?success=1" : "mis_recetas.php"));
+    $semana = semanaValida($pendiente['semana'] ?? null);
+    header("Location: " . ($planificada ? "planificacion_semanal.php?success=1" . ($semana !== lunesDe() ? "&semana=$semana" : '') : "mis_recetas.php"));
     exit;
 
 } catch (Exception $e) {

@@ -70,7 +70,8 @@ final class BaseDatosTest extends TestCase
         $this->assertFalse(asignarRecetaAlPlan(self::$pdo, self::MARCOS, 1, 0, 'Cena'));
         $this->assertTrue(asignarRecetaAlPlan(self::$pdo, self::LAURA, 3, 0, 'Desayuno'));
         $this->assertFalse(asignarRecetaAlPlan(self::$pdo, self::LAURA, 3, 0, 'Recena'), 'Momento fuera del ENUM');
-        $this->assertSame(3, (int) $this->valor("SELECT id_receta FROM comida_planificada WHERE dia_semana = 0 AND momento_comida = 'Desayuno'"));
+        $this->assertSame(3, (int) $this->valor("SELECT id_receta FROM comida_planificada WHERE id_plan = ? AND dia_semana = 0 AND momento_comida = 'Desayuno'",
+            [obtenerPlan(self::$pdo, self::LAURA)]));
     }
 
     public function testGuardarRecetaDeLaIAConIngredientesRepetidos(): void
@@ -127,7 +128,8 @@ final class BaseDatosTest extends TestCase
         // La meta es la del objetivo (calorías netas), no el TDEE de mantenimiento
         $meta = (int) $this->valor("SELECT calorias_netas_objetivo FROM perfil WHERE id_usuario = 3");
         self::$pdo->exec("UPDATE receta SET calorias_por_racion = 800 WHERE id_receta = 2");
-        $planificadas = (int) $this->valor("SELECT SUM(r.calorias_por_racion) FROM comida_planificada cp JOIN receta r USING (id_receta) WHERE cp.dia_semana = 0");
+        $planificadas = (int) $this->valor("SELECT SUM(r.calorias_por_racion) FROM comida_planificada cp JOIN receta r USING (id_receta) WHERE cp.dia_semana = 0 AND cp.id_plan = ?",
+            [obtenerPlan(self::$pdo, self::LAURA)]);
         generarRecetaInteligente(self::LAURA, false, 'Lunes', 'Cena', '', $ia, self::$pdo);
         $this->assertLessThan(round($meta * 0.25), $meta - $planificadas, "El escenario de la prueba es el correcto");
         $this->assertGreaterThan(150, $meta - $planificadas);
@@ -242,5 +244,58 @@ final class BaseDatosTest extends TestCase
 
         $this->assertArrayHasKey('error', rellenarSemanaConIA(self::$pdo, self::LAURA, ['Merienda'], 2, false, '', $iaFalsa), 'Ya no quedan huecos');
         $this->assertArrayHasKey('error', rellenarSemanaConIA(self::$pdo, self::LAURA, ['Cena'], 2, false, '', fn() => 'basura'));
+    }
+
+    public function testCadaSemanaTieneSuPropioPlan(): void
+    {
+        $esta = lunesDe();
+        $siguiente = semanaRelativa($esta, 1);
+        $this->assertTrue(asignarRecetaAlPlan(self::$pdo, self::LAURA, 2, 0, 'Merienda', $siguiente));
+        $this->assertNotSame(obtenerPlan(self::$pdo, self::LAURA, $esta), obtenerPlan(self::$pdo, self::LAURA, $siguiente));
+        $this->assertSame(obtenerPlan(self::$pdo, self::LAURA, $siguiente), obtenerOCrearPlan(self::$pdo, self::LAURA, $siguiente), 'No duplica el plan');
+        // La merienda del lunes que viene no aparece en esta semana
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
+                                                  WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.momento_comida = 'Merienda'", [self::LAURA, $esta]));
+        $this->assertSame(0, count(huecosLibres(self::$pdo, self::LAURA, ['Merienda'], $siguiente)) - 6);
+    }
+
+    public function testCopiarLaSemanaSoloRellenaHuecos(): void
+    {
+        $esta = lunesDe();
+        $siguiente = semanaRelativa($esta, 1);
+        // En la semana siguiente ya hay algo el lunes en el desayuno: se respeta
+        asignarRecetaAlPlan(self::$pdo, self::LAURA, 3, 0, 'Desayuno', $siguiente);
+
+        $copiadas = copiarSemana(self::$pdo, self::LAURA, $esta, $siguiente);
+        $this->assertSame(18, $copiadas, '19 comidas de esta semana menos el hueco ya ocupado');
+        $this->assertSame(3, (int) $this->valor("SELECT id_receta FROM comida_planificada WHERE id_plan = ? AND dia_semana = 0 AND momento_comida = 'Desayuno'",
+            [obtenerPlan(self::$pdo, self::LAURA, $siguiente)]));
+        $this->assertSame(0, copiarSemana(self::$pdo, self::LAURA, $esta, $siguiente), 'Copiar otra vez no duplica');
+        $this->assertSame(0, copiarSemana(self::$pdo, self::MARCOS, $esta, $siguiente), 'Sin plan de origen no copia nada');
+    }
+
+    public function testSoloSeMarcaHechaLaComidaDeLaSemanaDeEseDia(): void
+    {
+        $lunesPasado = semanaRelativa(lunesDe(), -1);
+        $idComida = (int) $this->valor("SELECT cp.id_comida_planificada FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
+                                         WHERE ps.fecha_inicio_semana = ? AND cp.dia_semana = 0 AND cp.momento_comida = 'Cena'", [$lunesPasado]);
+        $this->assertNotNull(registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $lunesPasado));
+        // El mismo lunes pero de esta semana no es esa comida
+        $this->assertNull(registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, lunesDe()));
+    }
+
+    public function testLaMigracionDeSemanasJuntaLosPlanesAntiguos(): void
+    {
+        // Como antes: un plan viejo con otra fecha y otro plan suelto con comidas
+        self::$pdo->exec("DELETE FROM plan_semanal WHERE id_plan = 2");
+        self::$pdo->exec("UPDATE plan_semanal SET fecha_inicio_semana = '2025-01-06' WHERE id_plan = 1");
+        self::$pdo->exec("INSERT INTO plan_semanal (id_plan, id_usuario, fecha_inicio_semana) VALUES (9, 3, '2025-03-03')");
+        self::$pdo->exec("INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida) VALUES (9, 2, 6, 'Merienda')");
+        self::$pdo->exec("DELETE FROM migraciones WHERE nombre = '004_un_plan_por_semana.sql'");
+
+        $this->assertSame(['004_un_plan_por_semana.sql'], aplicarMigracionesPendientes(self::$pdo));
+        $this->assertSame(1, (int) $this->valor("SELECT COUNT(*) FROM plan_semanal WHERE id_usuario = ?", [self::LAURA]));
+        $this->assertSame(1, obtenerPlan(self::$pdo, self::LAURA, lunesDe()), 'El plan pasa a ser el de esta semana');
+        $this->assertSame(20, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada WHERE id_plan = 1"), 'No se pierde ninguna comida');
     }
 }

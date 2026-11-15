@@ -9,6 +9,8 @@ $pageTitle = "KaloAI | Mi Plan Semanal";
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php'; 
+require_once __DIR__ . '/../../core/recetas.php';
+require_once __DIR__ . '/../../core/registro.php';
 
 // SEGURIDAD: Validación de estado de sesión para evitar acceso a calendarios ajenos
 if (!isset($_SESSION['user_id'])) { 
@@ -18,6 +20,29 @@ if (!isset($_SESSION['user_id'])) {
 
 $userId = $_SESSION['user_id'];
 $pdo = connectDB();
+
+// Semana que se está viendo (lunes) y direcciones para volver a ella
+$semana = semanaValida($_GET['semana'] ?? null);
+$semanaActual = lunesDe();
+$esSemanaActual = $semana === $semanaActual;
+$esPasada = $semana < $semanaActual;
+$paramSemana = $esSemanaActual ? '' : 'semana=' . $semana;
+$urlPlan = fn(string $extra = '') => 'planificacion_semanal.php' . (($q = implode('&', array_filter([$paramSemana, $extra]))) ? '?' . $q : '');
+
+// Copiar la semana anterior en los huecos libres de esta
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'copiar_semana') {
+    try {
+        $copiadas = copiarSemana($pdo, (int) $userId, semanaRelativa($semana, -1), $semana);
+        $_SESSION['aviso_plan'] = $copiadas
+            ? ['ok', "Copiadas $copiadas " . ($copiadas === 1 ? 'comida' : 'comidas') . ' de la semana anterior.']
+            : ['error', 'No había nada que copiar: la semana anterior está vacía o sus huecos ya están ocupados aquí.'];
+    } catch (PDOException $e) {
+        error_log('Error al copiar la semana: ' . $e->getMessage());
+        $_SESSION['aviso_plan'] = ['error', 'No se ha podido copiar la semana. Inténtalo de nuevo.'];
+    }
+    header('Location: ' . $urlPlan());
+    exit;
+}
 
 /**
  * 1. LÓGICA DE ELIMINACIÓN (Mantenimiento del Plan)
@@ -34,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_id'])) {
         $stmtDel->execute([$idComida, $userId]);
         
         // Redirección limpia para evitar reenvíos de formulario
-        header("Location: planificacion_semanal.php?deleted=1");
+        header("Location: " . $urlPlan('deleted=1'));
         exit;
     } catch (Exception $e) { 
         $error = "No se pudo eliminar la comida del plan."; 
@@ -67,10 +92,10 @@ $sql = "SELECT cp.*, r.*,
         FROM comida_planificada cp
         JOIN receta r ON cp.id_receta = r.id_receta
         JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-        WHERE ps.id_usuario = ?"; 
+        WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?"; 
 
 $stmt = $pdo->prepare($sql);
-$stmt->execute([$userId]);
+$stmt->execute([$userId, $semana]);
 $comidas = $stmt->fetchAll();
 
 // Matrices para organizar la visualización y el sumatorio acumulado
@@ -102,12 +127,29 @@ foreach ($comidas as $c) {
 $dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 $todasComidas = ['Desayuno', 'Media Mañana', 'Almuerzo', 'Merienda', 'Cena'];
 
+// Lo comido de verdad cada día de esta semana (solo hasta hoy)
+$hoyFecha = date('Y-m-d');
+$comidoPorFecha = $semana <= $semanaActual
+    ? caloriasConsumidasPorDia($pdo, (int) $userId, $semana, semanaRelativa($semana, 1))
+    : [];
+// Comidas de la semana anterior, para ofrecer copiarlas
+$stmtPrev = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
+                           WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+$stmtPrev->execute([$userId, semanaRelativa($semana, -1)]);
+$comidasSemanaAnterior = (int) $stmtPrev->fetchColumn();
+
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php';
 ?>
 <?php
 $diasEsp = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-$hoyNombre = $diasEsp[date('w')];
+// «Hoy» solo se marca en la semana actual
+$hoyNombre = $esSemanaActual ? $diasEsp[date('w')] : null;
+$mesesCortos = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+$fechaCorta = function (int $diaNumero) use ($semana, $mesesCortos) {
+    $f = new DateTimeImmutable(fechaDelDia($semana, $diaNumero));
+    return $f->format('j') . ' ' . $mesesCortos[$f->format('n') - 1];
+};
 // Resumen de la semana
 $numComidas = count($comidas);
 $avisoPlan = $_SESSION['aviso_plan'] ?? null;
@@ -131,14 +173,33 @@ $alertas = [
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <span class="k-pill"><?= icono('calendar') ?>Lunes a domingo</span>
+            <span class="k-pill"><?= icono('calendar') ?><?= e(nombreSemana($semana)) ?></span>
             <h1 class="k-title mt-3">Plan semanal</h1>
-            <p class="k-subtitle">Toca una comida para ver la receta, o el día para ver su resumen.</p>
+            <p class="k-subtitle"><?= $esPasada ? 'Así planificaste esta semana y lo que comiste cada día.' : 'Toca una comida para ver la receta, o el día para ver su resumen.' ?></p>
+            <!-- Navegación entre semanas -->
+            <nav class="mt-4 flex flex-wrap items-center gap-2" aria-label="Cambiar de semana">
+                <a href="planificacion_semanal.php?semana=<?= semanaRelativa($semana, -1) ?>" class="k-btn k-btn-secondary k-btn-icon" aria-label="Semana anterior" title="Semana anterior"><?= icono('chevron-left') ?></a>
+                <span class="min-w-[9rem] text-center text-sm font-medium tabular-nums k-strong"><?= $fechaCorta(0) ?> – <?= $fechaCorta(6) ?></span>
+                <a href="planificacion_semanal.php?semana=<?= semanaRelativa($semana, 1) ?>" class="k-btn k-btn-secondary k-btn-icon <?= $semana >= semanaRelativa($semanaActual, 8) ? 'pointer-events-none opacity-40' : '' ?>" aria-label="Semana siguiente" title="Semana siguiente"><?= icono('chevron-right') ?></a>
+                <?php if (!$esSemanaActual): ?><a href="planificacion_semanal.php" class="k-btn k-btn-ghost k-btn-sm">Volver a esta semana</a><?php endif; ?>
+            </nav>
         </div>
         <div class="flex flex-col gap-3 sm:items-end">
-            <?php if ($huecosLibresTotal > 0): ?>
-                <button type="button" onclick="abrirModal('modalRellenarSemana')" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Rellenar con IA</button>
-            <?php endif; ?>
+            <div class="flex flex-wrap gap-2 sm:justify-end">
+                <?php if ($comidasSemanaAnterior > 0 && $huecosLibresTotal > 0): ?>
+                    <form method="POST" action="<?= e($urlPlan()) ?>" class="m-0">
+                        <?= campoCsrf() ?>
+                        <input type="hidden" name="accion" value="copiar_semana">
+                        <button type="submit" class="k-btn k-btn-secondary" title="Copia sus comidas en los huecos libres de esta semana"><?= icono('download') ?>Copiar la semana anterior</button>
+                    </form>
+                <?php endif; ?>
+                <?php if ($huecosLibresTotal > 0 && !$esPasada): ?>
+                    <button type="button" onclick="abrirModal('modalRellenarSemana')" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Rellenar con IA</button>
+                <?php endif; ?>
+                <?php if (!$esPasada && $numComidas > 0): ?>
+                    <a href="lista_compra.php<?= $paramSemana ? '?' . $paramSemana : '' ?>" class="k-btn k-btn-secondary"><?= icono('cart') ?>Lista de la compra</a>
+                <?php endif; ?>
+            </div>
             <!-- Objetivos diarios -->
             <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="k-badge k-badge-brand"><?= icono('target', 'h-3.5 w-3.5') ?><?= number_format($metaKcal, 0, ',', '.') ?> kcal/día</span>
@@ -197,8 +258,19 @@ $alertas = [
         </div>
     </div>
 
+    <?php if ($numComidas === 0): ?>
+        <div class="k-alert k-alert-info mb-6" role="status">
+            <?= icono('info') ?>
+            <p><?= $esPasada
+                ? 'No planificaste nada esta semana.'
+                : 'Esta semana aún no tiene comidas. ' . ($comidasSemanaAnterior ? 'Copia la anterior, ' : '') . 'rellénala con IA o añade comidas una a una.' ?></p>
+        </div>
+    <?php endif; ?>
+
     <div class="space-y-4">
-        <?php foreach ($dias as $dia):
+        <?php foreach ($dias as $numDia => $dia):
+            $fechaDia = fechaDelDia($semana, $numDia);
+            $comidoDia = $fechaDia <= $hoyFecha ? ($comidoPorFecha[$fechaDia] ?? null) : null;
             $t = $totalesDia[$dia] ?? ['kcal' => 0, 'p' => 0, 'c' => 0, 'g' => 0];
             $pct = $metaKcal > 0 ? ($t['kcal'] / $metaKcal) * 100 : 0;
             $exceso = $pct > 110;
@@ -209,7 +281,9 @@ $alertas = [
                         class="flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5 text-left transition hover:bg-[color:var(--k-surface-2)] sm:px-6">
                     <span class="flex items-center gap-2">
                         <span class="font-display text-base font-semibold k-strong"><?= e($dia) ?></span>
+                        <span class="text-xs k-muted"><?= $fechaCorta($numDia) ?></span>
                         <?php if ($esHoy): ?><span class="k-badge k-badge-brand">Hoy</span><?php endif; ?>
+                        <?php if ($comidoDia !== null): ?><span class="k-badge k-badge-ok" title="Lo que apuntaste ese día"><?= icono('check', 'h-3 w-3') ?>Comido: <?= number_format($comidoDia, 0, ',', '.') ?> kcal</span><?php endif; ?>
                     </span>
                     <span class="ml-auto flex min-w-[12rem] flex-1 items-center gap-3 sm:max-w-xs">
                         <span class="k-track flex-1"><span class="k-bar block <?= $exceso ? 'k-bar-over' : '' ?>" style="width: <?= min(100, round($pct)) ?>%"></span></span>
@@ -241,7 +315,7 @@ $alertas = [
                                 <span class="mt-1">Límite de calorías</span>
                             </div>
                         <?php else: ?>
-                            <a href="generar_receta.php?dia=<?= urlencode($dia) ?>&momento=<?= urlencode($m) ?>"
+                            <a href="generar_receta.php?dia=<?= urlencode($dia) ?>&momento=<?= urlencode($m) ?><?= $paramSemana ? '&' . $paramSemana : '' ?>"
                                class="flex flex-col justify-center rounded-xl border border-dashed p-3 text-xs transition hover:border-teal-500/60 hover:text-teal-700 k-muted" style="border-color: var(--k-border-strong);">
                                 <span class="font-semibold uppercase tracking-wider"><?= e($m) ?></span>
                                 <span class="mt-1 flex items-center gap-1"><?= icono('plus', 'h-3.5 w-3.5') ?>Añadir</span>
@@ -314,8 +388,9 @@ $alertas = [
     <div class="k-modal-backdrop"></div>
     <form method="POST" action="rellenar_semana.php" class="k-modal-panel" data-espera="esperaSemana">
         <?= campoCsrf() ?>
+        <input type="hidden" name="semana" value="<?= e($semana) ?>">
         <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
-        <h2 id="tituloRellenar" class="k-modal-title">Rellenar la semana con IA</h2>
+        <h2 id="tituloRellenar" class="k-modal-title">Rellenar <?= e(mb_strtolower(nombreSemana($semana), 'UTF-8') === 'esta semana' ? 'esta semana' : (str_starts_with(nombreSemana($semana), 'La ') ? mb_strtolower(nombreSemana($semana), 'UTF-8') : 'la semana del ' . $fechaCorta(0))) ?> con IA</h2>
         <p class="mt-1 text-sm k-muted">Crea recetas nuevas y las coloca en los huecos libres. Lo que ya tienes planificado no se toca, y ningún día pasará de tu objetivo de calorías.</p>
 
         <fieldset class="mt-5">

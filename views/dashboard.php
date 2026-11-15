@@ -126,11 +126,11 @@ try {
                 FROM comida_planificada cp
                 JOIN receta r ON cp.id_receta = r.id_receta
                 JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                WHERE ps.id_usuario = ? 
+                WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?
                 HAVING dia_nombre = ?"; 
 
     $stmtComidas = $pdo->prepare($sqlComidas);
-    $stmtComidas->execute([$userId, $diaHoyNombre]); 
+    $stmtComidas->execute([$userId, lunesDe(), $diaHoyNombre]); 
     $rows = $stmtComidas->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($rows as $row) {
@@ -170,8 +170,8 @@ $stmtSemana = $pdo->prepare("SELECT cp.dia_semana, SUM(r.calorias_por_racion * c
                              FROM comida_planificada cp
                              JOIN receta r ON cp.id_receta = r.id_receta
                              JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                             WHERE ps.id_usuario = ? GROUP BY cp.dia_semana");
-$stmtSemana->execute([$userId]);
+                             WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? GROUP BY cp.dia_semana");
+$stmtSemana->execute([$userId, lunesDe()]);
 foreach ($stmtSemana->fetchAll() as $fila) {
     $semana[(int) $fila['dia_semana']] = ['kcal' => (float) $fila['kcal'], 'comidas' => (int) $fila['comidas']];
 }
@@ -193,8 +193,8 @@ $stmtNec = $pdo->prepare("SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones
                           FROM comida_planificada cp
                           JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
                           JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                          WHERE ps.id_usuario = ?");
-$stmtNec->execute([$userId]);
+                          WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+$stmtNec->execute([$userId, lunesDe()]);
 $stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
 $stmtInv->execute([$userId]);
 $inventario = $stmtInv->fetchAll();

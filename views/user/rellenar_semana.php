@@ -21,6 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Una semana entera puede tardar más que una receta suelta
 @set_time_limit(150);
+$semana = semanaValida($_POST['semana'] ?? null);
+$volver = 'planificacion_semanal.php' . ($semana !== lunesDe() ? '?semana=' . $semana : '');
 
 $resultado = rellenarSemanaConIA(
     connectDB(),
@@ -28,7 +30,9 @@ $resultado = rellenarSemanaConIA(
     array_map('strval', (array) ($_POST['momentos'] ?? [])),
     (int) ($_POST['variedad'] ?? 2),
     ($_POST['modo_generacion'] ?? '') === 'estricto',
-    mb_substr(trim((string) ($_POST['sugerencia'] ?? '')), 0, 300)
+    mb_substr(trim((string) ($_POST['sugerencia'] ?? '')), 0, 300),
+    null,
+    $semana
 );
 
 if (isset($resultado['error'])) {
@@ -43,5 +47,5 @@ if (isset($resultado['error'])) {
     $_SESSION['aviso_plan'] = ['ok', $texto];
 }
 
-header('Location: planificacion_semanal.php');
+header('Location: ' . $volver);
 exit;

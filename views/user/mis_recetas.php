@@ -9,6 +9,7 @@ $pageTitle = "KaloAI | Mis Recetas";
 session_start();
 require_once __DIR__ . '/../../core/utilidades.php';
 require_once __DIR__ . '/../../core/configuracion.php';
+require_once __DIR__ . '/../../core/recetas.php';
 
 // SEGURIDAD: Redirección si no hay sesión activa
 if (!isset($_SESSION['user_id'])) { redirect('../auth/login.php'); }
@@ -49,8 +50,8 @@ $mensajeTipo = ($_SESSION['mensaje_tipo'] ?? 'success') === 'error' ? 'error' : 
 unset($_SESSION['mensaje'], $_SESSION['mensaje_tipo']);
 
 // Cuántas veces está cada receta en el plan, para el resumen y las tarjetas
-$stmtUso = $pdo->prepare("SELECT cp.id_receta, COUNT(*) AS veces FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? GROUP BY cp.id_receta");
-$stmtUso->execute([$userId]);
+$stmtUso = $pdo->prepare("SELECT cp.id_receta, COUNT(*) AS veces FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? GROUP BY cp.id_receta");
+$stmtUso->execute([$userId, lunesDe()]);
 $usoEnPlan = array_column($stmtUso->fetchAll(PDO::FETCH_ASSOC), 'veces', 'id_receta');
 $recetasIa = count(array_filter($recetas, fn($r) => !empty($r['generado_ia'])));
 $mediaKcalRecetas = $recetas ? array_sum(array_column($recetas, 'calorias_por_racion')) / count($recetas) : 0;

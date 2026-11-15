@@ -205,9 +205,9 @@
 
     /* Control segmentado (filtros, pestañas): botones con aria-pressed */
     .k-seg { @apply inline-flex flex-wrap gap-1 rounded-full border p-1; background-color: var(--k-surface); border-color: var(--k-border); }
-    .k-seg > button { @apply inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition; color: var(--k-muted); }
-    .k-seg > button:hover { color: var(--k-text); }
-    .k-seg > button[aria-pressed="true"] { background-color: var(--k-surface-3); color: var(--k-text); }
+    .k-seg > :is(button, a) { @apply inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition; color: var(--k-muted); }
+    .k-seg > :is(button, a):hover { color: var(--k-text); }
+    .k-seg > button[aria-pressed="true"], .k-seg > a[aria-current="page"] { background-color: var(--k-surface-3); color: var(--k-text); }
 
     /* ---------- Etiquetas de estado (borde de color, como "Active"/"Paused") ---------- */
     .k-badge {

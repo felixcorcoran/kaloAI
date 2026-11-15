@@ -129,26 +129,81 @@ function unificarIngredientes(array $ingredientes): array {
 }
 
 /**
- * Devuelve el plan semanal de la persona y lo crea si aún no tiene.
- * La app usa un único plan por persona; fecha_inicio_semana guarda el lunes de
- * la semana en que se creó (la columna es obligatoria en el esquema).
+ * SEMANAS
+ * Hay un plan por persona y semana; cada semana se identifica por su lunes
+ * ('Y-m-d'), guardado en plan_semanal.fecha_inicio_semana.
  */
-function obtenerOCrearPlan(PDO $pdo, int $userId): int {
-    $stmt = $pdo->prepare("SELECT id_plan FROM plan_semanal WHERE id_usuario = ? ORDER BY id_plan LIMIT 1");
-    $stmt->execute([$userId]);
-    $idPlan = $stmt->fetchColumn();
-    if ($idPlan) return (int) $idPlan;
 
-    $lunes = (new DateTimeImmutable('monday this week'))->format('Y-m-d');
-    $pdo->prepare("INSERT INTO plan_semanal (id_usuario, fecha_inicio_semana) VALUES (?, ?)")->execute([$userId, $lunes]);
-    return (int) $pdo->lastInsertId();
+/** Lunes de la semana de una fecha ('Y-m-d'); sin fecha, el de esta semana. */
+function lunesDe(?string $fecha = null): string {
+    $dia = $fecha ? DateTimeImmutable::createFromFormat('!Y-m-d', $fecha) : new DateTimeImmutable('today');
+    if (!$dia) $dia = new DateTimeImmutable('today');
+    return $dia->modify('-' . ((int) $dia->format('N') - 1) . ' days')->format('Y-m-d');
 }
 
 /**
- * Pone una receta de la persona en un hueco del plan (sustituye lo que hubiera).
- * Devuelve false si la receta no es suya o el día/momento no son válidos.
+ * Semana pedida por la URL o un formulario, convertida en su lunes y acotada
+ * a un rango razonable (dos años atrás, ocho semanas adelante). Si no es una
+ * fecha válida, la semana actual.
  */
-function asignarRecetaAlPlan(PDO $pdo, int $userId, int $idReceta, int $diaNumero, string $momento): bool {
+function semanaValida(?string $semana, ?string $hoy = null): string {
+    $actual = lunesDe($hoy);
+    $fecha = $semana ? DateTimeImmutable::createFromFormat('!Y-m-d', $semana) : false;
+    // createFromFormat acepta el 31 de febrero (lo pasa a marzo): se exige que la fecha exista
+    if (!$fecha || $fecha->format('Y-m-d') !== $semana) return $actual;
+    $lunes = lunesDe($semana);
+    $min = (new DateTimeImmutable($actual))->modify('-104 weeks')->format('Y-m-d');
+    $max = (new DateTimeImmutable($actual))->modify('+8 weeks')->format('Y-m-d');
+    return max($min, min($max, $lunes));
+}
+
+/** Lunes de la semana anterior o siguiente. */
+function semanaRelativa(string $lunes, int $semanas): string {
+    return (new DateTimeImmutable($lunes))->modify(($semanas >= 0 ? '+' : '') . $semanas . ' weeks')->format('Y-m-d');
+}
+
+/** Fecha concreta ('Y-m-d') de un día (0 = lunes) de una semana. */
+function fechaDelDia(string $lunes, int $diaNumero): string {
+    return (new DateTimeImmutable($lunes))->modify("+$diaNumero days")->format('Y-m-d');
+}
+
+/** Texto de la semana: «Esta semana», «La semana que viene» o «9 – 15 nov». */
+function nombreSemana(string $lunes, ?string $hoy = null): string {
+    $actual = lunesDe($hoy);
+    if ($lunes === $actual) return 'Esta semana';
+    if ($lunes === semanaRelativa($actual, 1)) return 'La semana que viene';
+    if ($lunes === semanaRelativa($actual, -1)) return 'La semana pasada';
+    $meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    $ini = new DateTimeImmutable($lunes);
+    $fin = $ini->modify('+6 days');
+    $texto = $ini->format('j') . ($ini->format('n') !== $fin->format('n') ? ' ' . $meses[$ini->format('n') - 1] : '')
+           . ' – ' . $fin->format('j') . ' ' . $meses[$fin->format('n') - 1];
+    $anioActual = (new DateTimeImmutable($actual))->format('Y');
+    return $texto . ($ini->format('Y') !== $anioActual || $fin->format('Y') !== $anioActual ? ' ' . $fin->format('Y') : '');
+}
+
+/** Id del plan de una semana, o null si esa semana aún no tiene plan. */
+function obtenerPlan(PDO $pdo, int $userId, ?string $lunes = null): ?int {
+    $stmt = $pdo->prepare("SELECT id_plan FROM plan_semanal WHERE id_usuario = ? AND fecha_inicio_semana = ?");
+    $stmt->execute([$userId, $lunes ?? lunesDe()]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int) $id : null;
+}
+
+/** Devuelve el plan de una semana (por defecto la actual) y lo crea si aún no existe. */
+function obtenerOCrearPlan(PDO $pdo, int $userId, ?string $lunes = null): int {
+    $lunes = $lunes ?? lunesDe();
+    if ($id = obtenerPlan($pdo, $userId, $lunes)) return $id;
+    // INSERT IGNORE: si dos peticiones llegan a la vez, la clave única evita el duplicado
+    $pdo->prepare("INSERT IGNORE INTO plan_semanal (id_usuario, fecha_inicio_semana) VALUES (?, ?)")->execute([$userId, $lunes]);
+    return obtenerPlan($pdo, $userId, $lunes);
+}
+
+/**
+ * Pone una receta de la persona en un hueco del plan de una semana (sustituye
+ * lo que hubiera). Devuelve false si la receta no es suya o el día/momento no son válidos.
+ */
+function asignarRecetaAlPlan(PDO $pdo, int $userId, int $idReceta, int $diaNumero, string $momento, ?string $lunes = null): bool {
     $momento = momentoValido($momento);
     if ($momento === null || $diaNumero < 0 || $diaNumero > 6) return false;
 
@@ -156,12 +211,30 @@ function asignarRecetaAlPlan(PDO $pdo, int $userId, int $idReceta, int $diaNumer
     $propia->execute([$idReceta, $userId]);
     if (!$propia->fetchColumn()) return false;
 
-    $idPlan = obtenerOCrearPlan($pdo, $userId);
+    $idPlan = obtenerOCrearPlan($pdo, $userId, $lunes);
     $pdo->prepare("DELETE FROM comida_planificada WHERE id_plan = ? AND dia_semana = ? AND momento_comida = ?")
         ->execute([$idPlan, $diaNumero, $momento]);
     $pdo->prepare("INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, raciones) VALUES (?, ?, ?, ?, 1)")
         ->execute([$idPlan, $idReceta, $diaNumero, $momento]);
     return true;
+}
+
+/**
+ * Copia las comidas de una semana en otra, solo en los huecos vacíos (lo que
+ * ya hubiera en la semana de destino no se toca). Devuelve cuántas ha copiado.
+ */
+function copiarSemana(PDO $pdo, int $userId, string $origen, string $destino): int {
+    $idOrigen = obtenerPlan($pdo, $userId, $origen);
+    if (!$idOrigen || $origen === $destino) return 0;
+    $idDestino = obtenerOCrearPlan($pdo, $userId, $destino);
+    $stmt = $pdo->prepare("INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, raciones)
+                           SELECT ?, o.id_receta, o.dia_semana, o.momento_comida, o.raciones
+                           FROM comida_planificada o
+                           WHERE o.id_plan = ?
+                             AND NOT EXISTS (SELECT 1 FROM comida_planificada d
+                                             WHERE d.id_plan = ? AND d.dia_semana = o.dia_semana AND d.momento_comida = o.momento_comida)");
+    $stmt->execute([$idDestino, $idOrigen, $idDestino]);
+    return $stmt->rowCount();
 }
 
 /**

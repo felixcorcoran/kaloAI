@@ -33,10 +33,12 @@ $sqlNecesario = "SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unid
                  FROM comida_planificada cp
                  JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
                  JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                 WHERE ps.id_usuario = ?";
+                 WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?";
 
 $stmtNec = $pdo->prepare($sqlNecesario);
-$stmtNec->execute([$userId]);
+// Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
+$semana = semanaValida($_GET['semana'] ?? null);
+$stmtNec->execute([$userId, $semana]);
 $necesariosRaw = $stmtNec->fetchAll();
 
 // Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
@@ -69,7 +71,7 @@ $html = '
 <body>
     <div class="header">
         <h1>Compra KaloAI</h1>
-        <p>Generada el ' . date('d/m/Y') . '</p>
+        <p>' . htmlspecialchars(nombreSemana($semana), ENT_QUOTES, 'UTF-8') . ' (semana del ' . date('d/m', strtotime($semana)) . ') · generada el ' . date('d/m/Y') . '</p>
     </div>';
 
 foreach ($listaCompra as $item) {

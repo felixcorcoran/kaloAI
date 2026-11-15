@@ -157,7 +157,8 @@ function abrirResumenDia(nombre, totales) {
 
 /** Quitar una comida del plan. */
 function confirmarEliminarComida(id) {
-    confirmar('modalEliminar', () => enviarPost('planificacion_semanal.php', { eliminar_id: id }));
+    // Se envía a la misma dirección (con ?semana=...) para volver a la semana que se estaba viendo
+    confirmar('modalEliminar', () => enviarPost('planificacion_semanal.php' + window.location.search, { eliminar_id: id }));
 }
 
 /* ==========================================================================

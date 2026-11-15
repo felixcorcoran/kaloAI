@@ -84,8 +84,8 @@ function registrarComidaPlanificada(PDO $pdo, int $userId, int $idComidaPlanific
                            FROM comida_planificada cp
                            JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
                            JOIN receta r ON cp.id_receta = r.id_receta
-                           WHERE cp.id_comida_planificada = ? AND ps.id_usuario = ?");
-    $stmt->execute([$idComidaPlanificada, $userId]);
+                           WHERE cp.id_comida_planificada = ? AND ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+    $stmt->execute([$idComidaPlanificada, $userId, lunesDe($fecha)]);
     $comida = $stmt->fetch(PDO::FETCH_ASSOC);
     $dia = DateTimeImmutable::createFromFormat('!Y-m-d', $fecha);
     if (!$comida || !$dia || (int) $dia->format('N') - 1 !== (int) $comida['dia_semana']) return null;

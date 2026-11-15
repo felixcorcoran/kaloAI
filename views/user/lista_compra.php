@@ -33,10 +33,12 @@ $sqlNecesario = "SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unid
                  FROM comida_planificada cp
                  JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
                  JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                 WHERE ps.id_usuario = ?";
+                 WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?";
 
 $stmtNec = $pdo->prepare($sqlNecesario);
-$stmtNec->execute([$userId]);
+// Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
+$semana = semanaValida($_GET['semana'] ?? null);
+$stmtNec->execute([$userId, $semana]);
 $necesariosRaw = $stmtNec->fetchAll();
 
 // Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
@@ -49,8 +51,8 @@ $listaCompra = calcularListaCompra($necesariosRaw, $stmtInv->fetchAll());
 $ingredientesPlan = count(array_unique(array_map(fn($f) => claveProducto((string) $f['nombre_ingrediente']), $necesariosRaw)));
 $cubiertos = max(0, $ingredientesPlan - count($listaCompra));
 $parciales = count(array_filter($listaCompra, fn($i) => $i['en_despensa'] > 0));
-$stmtCom = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ?");
-$stmtCom->execute([$userId]);
+$stmtCom = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+$stmtCom->execute([$userId, $semana]);
 $comidasPlan = (int) $stmtCom->fetchColumn();
 
 // Carga del componente de cabecera 
@@ -70,13 +72,21 @@ $formatear = function (float $cantidad, string $unidad): string {
 <div class="k-container k-page">
     <div class="k-page-head">
         <div>
-            <span class="k-pill"><?= icono('cart') ?>Semana actual</span>
+            <span class="k-pill"><?= icono('cart') ?><?= e(nombreSemana($semana)) ?></span>
             <h1 class="k-title mt-3">Lista de la compra</h1>
             <p class="k-subtitle">Lo que necesitan las recetas de tu plan, menos lo que ya tienes en la despensa.</p>
         </div>
-        <?php if (!empty($listaCompra)): ?>
-            <a href="descargar_lista.php" class="k-btn k-btn-secondary"><?= icono('download') ?>Descargar PDF</a>
-        <?php endif; ?>
+        <div class="flex flex-wrap items-center gap-2">
+            <!-- Esta semana o la siguiente (para hacer la compra con antelación) -->
+            <div class="k-seg" role="group" aria-label="Semana de la lista">
+                <?php foreach ([lunesDe(), semanaRelativa(lunesDe(), 1)] as $opcion): ?>
+                    <a href="lista_compra.php<?= $opcion !== lunesDe() ? '?semana=' . $opcion : '' ?>" <?= $opcion === $semana ? 'aria-current="page"' : '' ?>><?= e(nombreSemana($opcion)) ?></a>
+                <?php endforeach; ?>
+            </div>
+            <?php if (!empty($listaCompra)): ?>
+                <a href="descargar_lista.php<?= $semana !== lunesDe() ? '?semana=' . $semana : '' ?>" class="k-btn k-btn-secondary"><?= icono('download') ?>Descargar PDF</a>
+            <?php endif; ?>
+        </div>
     </div>
 
     <?php if (isset($_GET['success'])): ?>
@@ -107,7 +117,7 @@ $formatear = function (float $cantidad, string $unidad): string {
             <p class="font-medium k-strong"><?= $comidasPlan ? 'No te falta nada' : 'Tu plan está vacío' ?></p>
             <p class="mt-1 max-w-sm text-sm k-muted"><?= $comidasPlan ? 'Tienes en la despensa todo lo que piden las recetas del plan.' : 'Añade recetas al plan semanal y aquí verás lo que tienes que comprar.' ?></p>
             <div class="mt-5 flex gap-2">
-                <a href="planificacion_semanal.php" class="k-btn k-btn-secondary">Ver el plan</a>
+                <a href="planificacion_semanal.php<?= $semana !== lunesDe() ? '?semana=' . $semana : '' ?>" class="k-btn k-btn-secondary">Ver el plan</a>
                 <a href="inventario.php" class="k-btn k-btn-secondary">Ver la despensa</a>
             </div>
         </div>

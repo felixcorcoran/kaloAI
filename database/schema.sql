@@ -199,4 +199,5 @@ CREATE TABLE migraciones (
 INSERT INTO migraciones (nombre) VALUES
   ('001_perfil_y_solicitudes.sql'),
   ('002_texto_sin_escapar.sql'),
-  ('003_registro_comida.sql');
+  ('003_registro_comida.sql'),
+  ('004_un_plan_por_semana.sql');

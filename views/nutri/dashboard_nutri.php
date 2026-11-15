@@ -9,6 +9,7 @@ $pageTitle = "KaloAI | Pacientes";
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/recetas.php';
 
 /* ==========================================================================
    SEGURIDAD Y CONTROL DE ACCESO
@@ -38,14 +39,14 @@ $stmt = $pdo->prepare("
     SELECT u.id_usuario, p.nombre, u.correo, p.peso_kg, p.objetivo, p.calorias_netas_objetivo,
            (SELECT pr.peso_kg FROM progreso pr WHERE pr.id_usuario = u.id_usuario AND pr.peso_kg IS NOT NULL ORDER BY pr.fecha ASC LIMIT 1) AS peso_inicial,
            (SELECT MAX(pr.fecha) FROM progreso pr WHERE pr.id_usuario = u.id_usuario) AS ultimo_registro,
-           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario) AS comidas_plan,
+           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario AND ps.fecha_inicio_semana = ?) AS comidas_plan,
            (SELECT COUNT(DISTINCT rc.fecha) FROM registro_comida rc WHERE rc.id_usuario = u.id_usuario AND rc.fecha > DATE_SUB(CURDATE(), INTERVAL 7 DAY)) AS dias_registrados
     FROM usuario u
     JOIN perfil p ON u.id_usuario = p.id_usuario
     WHERE p.id_nutricionista = ?
     ORDER BY p.nombre
 ");
-$stmt->execute([$nutriId]);
+$stmt->execute([lunesDe(), $nutriId]);
 $pacientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 

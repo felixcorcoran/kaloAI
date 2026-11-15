@@ -14,10 +14,10 @@ require_once __DIR__ . '/generar_recetas_ia.php';
 const VARIEDAD_SEMANA = [1, 2, 3];
 
 /** Huecos sin comida del plan para los momentos pedidos: [['dia' => 0..6, 'momento' => 'Cena'], ...] */
-function huecosLibres(PDO $pdo, int $userId, array $momentos): array {
+function huecosLibres(PDO $pdo, int $userId, array $momentos, ?string $lunes = null): array {
     $stmt = $pdo->prepare("SELECT cp.dia_semana, cp.momento_comida FROM comida_planificada cp
-                           JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ?");
-    $stmt->execute([$userId]);
+                           JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+    $stmt->execute([$userId, $lunes ?? lunesDe()]);
     $ocupados = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $fila) $ocupados[$fila['dia_semana'] . '|' . $fila['momento_comida']] = true;
 
@@ -142,13 +142,14 @@ function repartirRecetas(array $huecos, array $kcalRecetas, array $kcalPorDia, i
  * @param callable|null $preguntar Función que llama a la IA (los tests pasan una falsa)
  */
 function rellenarSemanaConIA(PDO $pdo, int $userId, array $momentos, int $variedad, bool $soloInventario,
-                             string $sugerencia = '', ?callable $preguntar = null): array {
+                             string $sugerencia = '', ?callable $preguntar = null, ?string $lunes = null): array {
+    $lunes = $lunes ?? lunesDe();
     $preguntar = $preguntar ?? fn($prompt) => preguntarGemini($prompt, 90);
     $momentos = array_values(array_filter(array_map('momentoValido', $momentos)));
     $variedad = in_array($variedad, VARIEDAD_SEMANA, true) ? $variedad : 2;
     if (!$momentos) return ['error' => 'Elige al menos una comida del día.'];
 
-    $huecos = huecosLibres($pdo, $userId, $momentos);
+    $huecos = huecosLibres($pdo, $userId, $momentos, $lunes);
     if (!$huecos) return ['error' => 'No hay huecos libres en esas comidas: tu semana ya está completa.'];
 
     $stmt = $pdo->prepare("SELECT COALESCE(calorias_netas_objetivo, tdee_calorias) FROM perfil WHERE id_usuario = ?");
@@ -186,8 +187,8 @@ function rellenarSemanaConIA(PDO $pdo, int $userId, array $momentos, int $varied
 
     $stmt = $pdo->prepare("SELECT cp.dia_semana, SUM(r.calorias_por_racion * cp.raciones) FROM comida_planificada cp
                            JOIN receta r ON cp.id_receta = r.id_receta JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                           WHERE ps.id_usuario = ? GROUP BY cp.dia_semana");
-    $stmt->execute([$userId]);
+                           WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? GROUP BY cp.dia_semana");
+    $stmt->execute([$userId, $lunes]);
     $kcalPorDia = array_map('floatval', $stmt->fetchAll(PDO::FETCH_KEY_PAIR));
 
     $kcalRecetas = array_map(fn($lista) => array_map(fn($r) => (float) $r['calorias'], $lista), $porMomento);
@@ -200,7 +201,7 @@ function rellenarSemanaConIA(PDO $pdo, int $userId, array $momentos, int $varied
         foreach ($asignaciones as $a) {
             $clave = $a['momento'] . '|' . $a['indice'];
             $ids[$clave] ??= guardarRecetaIA($pdo, $userId, $porMomento[$a['momento']][$a['indice']], $a['momento']);
-            asignarRecetaAlPlan($pdo, $userId, $ids[$clave], $a['dia'], $a['momento']);
+            asignarRecetaAlPlan($pdo, $userId, $ids[$clave], $a['dia'], $a['momento'], $lunes);
         }
         $pdo->commit();
     } catch (Throwable $e) {
