@@ -74,6 +74,20 @@ INSERT INTO progreso (id_usuario, fecha, peso_kg, cintura_cm, nota) VALUES
   (3, DATE_SUB(CURDATE(), INTERVAL 7 DAY),  64.90, 76.2, 'Más energía en los entrenos'),
   (3, CURDATE(),                            64.50, 75.9, NULL);
 
+-- Lo que Laura ha comido de verdad los últimos días (y el desayuno de hoy)
+INSERT INTO registro_comida (id_usuario, fecha, momento_comida, id_receta, descripcion, calorias, proteinas_g, carbohidratos_g, grasas_g) VALUES
+  (3, DATE_SUB(CURDATE(), INTERVAL 3 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL 3 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14),
+  (3, DATE_SUB(CURDATE(), INTERVAL 3 DAY), 'Cena',     3, 'Tortilla francesa con ensalada', 410, 26, 12, 28),
+  (3, DATE_SUB(CURDATE(), INTERVAL 2 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL 2 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14),
+  (3, DATE_SUB(CURDATE(), INTERVAL 2 DAY), 'Cena',     NULL, 'Pizza con amigos', 850, 32, 95, 36),
+  (3, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8),
+  (3, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 'Almuerzo', 2, 'Pollo con arroz integral y verduras', 620, 48, 70, 14),
+  (3, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 'Merienda', NULL, 'Yogur griego con nueces', 220, 12, 9, 15),
+  (3, DATE_SUB(CURDATE(), INTERVAL 1 DAY), 'Cena',     3, 'Tortilla francesa con ensalada', 410, 26, 12, 28),
+  (3, CURDATE(),                           'Desayuno', 1, 'Porridge de avena y plátano', 380, 14, 62, 8);
+
 INSERT INTO solicitudes_vinculacion (id_nutricionista, id_paciente, estado) VALUES
   (2, 3, 'aceptada'),
   (2, 4, 'pendiente');

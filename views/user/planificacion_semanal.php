@@ -110,6 +110,14 @@ $diasEsp = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'S�
 $hoyNombre = $diasEsp[date('w')];
 // Resumen de la semana
 $numComidas = count($comidas);
+$avisoPlan = $_SESSION['aviso_plan'] ?? null;
+unset($_SESSION['aviso_plan']);
+// Huecos libres por momento, para el modal de «Rellenar con IA»
+$libresPorMomento = [];
+foreach ($todasComidas as $m) {
+    $libresPorMomento[$m] = 7 - count(array_filter($dias, fn($d) => isset($plan[$d][$m])));
+}
+$huecosLibresTotal = array_sum($libresPorMomento);
 $diasConComida = array_filter($totalesDia, fn($t) => $t['kcal'] > 0);
 $mediaKcal = $diasConComida ? array_sum(array_column($diasConComida, 'kcal')) / count($diasConComida) : 0;
 $mediaProt = $diasConComida ? array_sum(array_column($diasConComida, 'p')) / count($diasConComida) : 0;
@@ -127,14 +135,23 @@ $alertas = [
             <h1 class="k-title mt-3">Plan semanal</h1>
             <p class="k-subtitle">Toca una comida para ver la receta, o el día para ver su resumen.</p>
         </div>
-        <!-- Objetivos diarios -->
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-            <span class="k-badge k-badge-brand"><?= icono('target', 'h-3.5 w-3.5') ?><?= number_format($metaKcal, 0, ',', '.') ?> kcal/día</span>
-            <span class="k-badge k-macro-p"><span class="k-macro-dot"></span>P <?= round($metaP) ?> g</span>
-            <span class="k-badge k-macro-c"><span class="k-macro-dot"></span>C <?= round($metaC) ?> g</span>
-            <span class="k-badge k-macro-f"><span class="k-macro-dot"></span>G <?= round($metaG) ?> g</span>
+        <div class="flex flex-col gap-3 sm:items-end">
+            <?php if ($huecosLibresTotal > 0): ?>
+                <button type="button" onclick="abrirModal('modalRellenarSemana')" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Rellenar con IA</button>
+            <?php endif; ?>
+            <!-- Objetivos diarios -->
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span class="k-badge k-badge-brand"><?= icono('target', 'h-3.5 w-3.5') ?><?= number_format($metaKcal, 0, ',', '.') ?> kcal/día</span>
+                <span class="k-badge k-macro-p"><span class="k-macro-dot"></span>P <?= round($metaP) ?> g</span>
+                <span class="k-badge k-macro-c"><span class="k-macro-dot"></span>C <?= round($metaC) ?> g</span>
+                <span class="k-badge k-macro-f"><span class="k-macro-dot"></span>G <?= round($metaG) ?> g</span>
+            </div>
         </div>
     </div>
+
+    <?php if ($avisoPlan): [$tipoAviso, $textoAviso] = $avisoPlan; ?>
+        <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mb-6" role="status"><?= icono($tipoAviso === 'ok' ? 'sparkles' : 'alert') ?><p><?= e($textoAviso) ?></p></div>
+    <?php endif; ?>
 
     <?php foreach ($alertas as $clave => [$tipo, $texto]): if (isset($_GET[$clave])): ?>
         <div class="k-alert k-alert-<?= $tipo ?> mb-6"><?= icono('check') ?><p><?= e($texto) ?></p></div>
@@ -291,5 +308,77 @@ $alertas = [
     // Objetivos diarios para el resumen de cada día (main.js)
     window.planData = { meta: { kcal: <?= (float) $metaKcal ?>, p: <?= (float) $metaP ?>, c: <?= (float) $metaC ?>, g: <?= (float) $metaG ?> } };
 </script>
+
+<!-- MODAL: RELLENAR LA SEMANA CON IA -->
+<div id="modalRellenarSemana" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloRellenar">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="rellenar_semana.php" class="k-modal-panel" data-espera="esperaSemana">
+        <?= campoCsrf() ?>
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloRellenar" class="k-modal-title">Rellenar la semana con IA</h2>
+        <p class="mt-1 text-sm k-muted">Crea recetas nuevas y las coloca en los huecos libres. Lo que ya tienes planificado no se toca, y ningún día pasará de tu objetivo de calorías.</p>
+
+        <fieldset class="mt-5">
+            <legend class="k-label">¿Qué comidas relleno?</legend>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <?php foreach ($todasComidas as $m):
+                    $libres = $libresPorMomento[$m]; ?>
+                    <label class="block">
+                        <input type="checkbox" name="momentos[]" value="<?= e($m) ?>" class="peer sr-only" <?= $libres > 0 && in_array($m, ['Desayuno', 'Almuerzo', 'Cena'], true) ? 'checked' : '' ?> <?= $libres === 0 ? 'disabled' : '' ?>>
+                        <span class="k-choice justify-between <?= $libres === 0 ? 'opacity-50' : '' ?>"><span><?= e($m) ?></span><span class="text-xs font-normal k-muted"><?= $libres === 0 ? 'completo' : $libres . ($libres === 1 ? ' hueco' : ' huecos') ?></span></span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+        </fieldset>
+
+        <fieldset class="mt-5">
+            <legend class="k-label">Variedad</legend>
+            <div class="grid grid-cols-3 gap-2">
+                <?php foreach ([1 => 'Poca', 2 => 'Normal', 3 => 'Mucha'] as $valor => $texto): ?>
+                    <label class="block">
+                        <input type="radio" name="variedad" value="<?= $valor ?>" class="peer sr-only" <?= $valor === 2 ? 'checked' : '' ?>>
+                        <span class="k-choice flex-col items-start gap-0"><span><?= $texto ?></span><span class="text-xs font-normal k-muted"><?= $valor ?> <?= $valor === 1 ? 'receta' : 'recetas' ?> por comida</span></span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <p class="k-hint">Menos variedad = lista de la compra más corta.</p>
+        </fieldset>
+
+        <fieldset class="mt-5">
+            <legend class="k-label">Ingredientes</legend>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label class="block">
+                    <input type="radio" name="modo_generacion" value="flexible" class="peer sr-only" checked>
+                    <span class="k-choice"><?= icono('cart', 'h-4 w-4 shrink-0') ?>Lo que haga falta</span>
+                </label>
+                <label class="block">
+                    <input type="radio" name="modo_generacion" value="estricto" class="peer sr-only">
+                    <span class="k-choice"><?= icono('package', 'h-4 w-4 shrink-0') ?>Solo mi despensa</span>
+                </label>
+            </div>
+        </fieldset>
+
+        <div class="mt-5">
+            <label for="sugerenciaSemana" class="k-label">¿Alguna preferencia? <span class="font-normal k-muted">(opcional)</span></label>
+            <input id="sugerenciaSemana" name="sugerencia" type="text" maxlength="300" class="k-input" placeholder="Ej. más pescado, cenas ligeras, nada muy elaborado">
+        </div>
+
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Rellenar mi semana</button>
+        </div>
+    </form>
+</div>
+
+<!-- PANTALLA DE ESPERA MIENTRAS LA IA PREPARA LA SEMANA -->
+<div id="esperaSemana" class="k-modal" hidden aria-live="polite">
+    <div class="k-modal-backdrop"></div>
+    <div class="k-modal-panel max-w-xs text-center">
+        <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-teal-500/20 border-t-teal-500"></div>
+        <p class="font-medium k-strong">Preparando tu semana…</p>
+        <p class="mt-1 text-sm k-muted" data-frases="Pensando el menú…|Cuadrando las calorías de cada día…|Evitando tus alergias…|Aprovechando tu despensa…|Ya casi está…">Pensando el menú…</p>
+        <p class="mt-3 text-xs k-muted">Puede tardar hasta un minuto.</p>
+    </div>
+</div>
 
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

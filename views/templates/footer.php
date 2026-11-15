@@ -70,6 +70,7 @@
 <script>
     // En modo oscuro, los textos y las líneas de los gráficos en tonos claros
     if (window.Chart) {
+        Chart.defaults.locale = 'es-ES';
         Chart.defaults.font.family = '"DM Sans", ui-sans-serif, system-ui, sans-serif';
         Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--k-muted').trim() || '#71717a';
         Chart.defaults.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--k-border').trim() || 'rgba(0,0,0,0.07)';

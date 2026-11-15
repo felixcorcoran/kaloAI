@@ -12,7 +12,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS migraciones, comida_planificada, detalle_receta, ingrediente_prohibido, inventario,
-    logs_actividad, perfil, plan_semanal, progreso, receta, rol, solicitudes_vinculacion, usuario;
+    logs_actividad, perfil, plan_semanal, progreso, receta, registro_comida, rol, solicitudes_vinculacion, usuario;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -167,6 +167,27 @@ CREATE TABLE solicitudes_vinculacion (
   CONSTRAINT solicitudes_vinculacion_ibfk_2 FOREIGN KEY (id_paciente) REFERENCES usuario (id_usuario) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Lo que se come de verdad cada día (migración 003)
+CREATE TABLE registro_comida (
+  id_registro INT NOT NULL AUTO_INCREMENT,
+  id_usuario INT NOT NULL,
+  fecha DATE NOT NULL,
+  momento_comida ENUM('Desayuno','Media Mañana','Almuerzo','Merienda','Cena') NOT NULL,
+  id_receta INT DEFAULT NULL,
+  descripcion VARCHAR(200) NOT NULL,
+  raciones DECIMAL(6,2) NOT NULL DEFAULT 1.00,
+  calorias INT NOT NULL DEFAULT 0,
+  proteinas_g DECIMAL(6,1) NOT NULL DEFAULT 0,
+  carbohidratos_g DECIMAL(6,1) NOT NULL DEFAULT 0,
+  grasas_g DECIMAL(6,1) NOT NULL DEFAULT 0,
+  fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_registro),
+  KEY idx_registro_usuario_fecha (id_usuario, fecha),
+  KEY fk_registro_receta (id_receta),
+  CONSTRAINT fk_registro_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario) ON DELETE CASCADE,
+  CONSTRAINT fk_registro_receta FOREIGN KEY (id_receta) REFERENCES receta (id_receta) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Registro de migraciones (core/migraciones.php). Este esquema ya incluye los
 -- cambios de las que se listan aquí, así que se apuntan como aplicadas.
 CREATE TABLE migraciones (
@@ -177,4 +198,5 @@ CREATE TABLE migraciones (
 
 INSERT INTO migraciones (nombre) VALUES
   ('001_perfil_y_solicitudes.sql'),
-  ('002_texto_sin_escapar.sql');
+  ('002_texto_sin_escapar.sql'),
+  ('003_registro_comida.sql');

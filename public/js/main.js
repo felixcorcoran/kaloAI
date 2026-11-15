@@ -296,6 +296,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Formularios largos (la IA tarda): al enviarlos se muestra su pantalla de espera
+    document.querySelectorAll('form[data-espera]').forEach(formulario => {
+        formulario.addEventListener('submit', (evento) => {
+            if (formulario.querySelector('input[name="momentos[]"]') && !formulario.querySelector('input[name="momentos[]"]:checked')) {
+                evento.preventDefault();
+                alert('Elige al menos una comida del día.');
+                return;
+            }
+            const capa = document.getElementById(formulario.dataset.espera);
+            if (!capa) return;
+            formulario.closest('.k-modal')?.setAttribute('hidden', '');
+            capa.hidden = false;
+            const texto = capa.querySelector('[data-frases]');
+            if (texto) {
+                const frases = texto.dataset.frases.split('|');
+                let i = 0;
+                setInterval(() => { texto.textContent = frases[++i % frases.length]; }, 2500);
+            }
+        });
+    });
+
     iniciarRestricciones();
     iniciarProgreso();
     iniciarGraficoPanel();
@@ -486,15 +507,23 @@ function iniciarGraficoPanel() {
         degradado.addColorStop(0, indigo);
         degradado.addColorStop(1, indigo + '55');
         const conjuntos = [{
-            type: 'bar',
+            type: 'bar', label: 'Planificado',
             data: datos.semana,
-            backgroundColor: datos.semana.map((_, i) => i === datos.hoy ? marca : degradado),
-            borderRadius: 10,
-            borderSkipped: false,
-            barPercentage: 0.62,
-            categoryPercentage: 0.8,
+            backgroundColor: degradado,
+            borderRadius: 8, borderSkipped: false,
+            barPercentage: 0.8, categoryPercentage: 0.7,
             order: 2,
         }];
+        if (datos.comido) {
+            conjuntos.push({
+                type: 'bar', label: 'Comido',
+                data: datos.comido,
+                backgroundColor: datos.comido.map((_, i) => i === datos.hoy ? marca : marca + 'b3'),
+                borderRadius: 8, borderSkipped: false,
+                barPercentage: 0.8, categoryPercentage: 0.7,
+                order: 2,
+            });
+        }
         if (datos.meta > 0) {
             conjuntos.push({
                 type: 'line', label: 'Objetivo', data: datos.semana.map(() => datos.meta),
@@ -506,7 +535,7 @@ function iniciarGraficoPanel() {
             data: { labels: datos.dias, datasets: conjuntos },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => Math.round(c.raw) + ' kcal' + (c.dataset.label ? ' (objetivo)' : '') } } },
+                plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => c.dataset.label + ': ' + Math.round(c.raw) + ' kcal' } } },
                 scales: {
                     x: { grid: { display: false }, border: { display: false } },
                     y: { beginAtZero: true, border: { display: false }, ticks: { maxTicksLimit: 5 }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
@@ -534,6 +563,44 @@ function iniciarGraficoPanel() {
                 plugins: { legend: { display: false }, tooltip: { enabled: hayDatos, displayColors: false, callbacks: { label: c => c.label + ': ' + c.raw + ' kcal' } } },
             },
         });
+    }
+}
+
+/* ==========================================================================
+   8b. PANEL: APUNTAR ALGO COMIDO FUERA DEL PLAN
+   ========================================================================== */
+
+function abrirComidaLibre() {
+    abrirModal('modalComidaLibre');
+}
+
+/** Pide a la IA las calorías y macros de lo escrito y rellena los campos. */
+async function estimarComidaLibre() {
+    const descripcion = document.getElementById('libreDescripcion').value.trim();
+    const aviso = document.getElementById('estimarAviso');
+    const boton = document.getElementById('btnEstimar');
+    const avisar = (texto) => { aviso.textContent = texto; aviso.hidden = !texto; };
+    if (!descripcion) { avisar('Escribe primero qué has comido.'); document.getElementById('libreDescripcion').focus(); return; }
+
+    boton.disabled = true;
+    avisar('Calculando…');
+    try {
+        const datos = new FormData();
+        datos.append('accion', 'estimar');
+        datos.append('descripcion', descripcion);
+        const respuesta = await fetch('user/registrar_comida.php', {
+            method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf(), 'Accept': 'application/json' },
+        });
+        const json = await respuesta.json();
+        if (!json.success) { avisar(json.error || 'No se ha podido calcular.'); return; }
+        ['calorias', 'proteinas', 'carbohidratos', 'grasas'].forEach(campo => {
+            document.getElementById('libre_' + campo).value = json[campo];
+        });
+        avisar('Estimación de la IA: revísala si conoces las cifras exactas.');
+    } catch (e) {
+        avisar('No se ha podido calcular. Escribe las calorías a mano.');
+    } finally {
+        boton.disabled = false;
     }
 }
 

@@ -13,7 +13,7 @@ require_once __DIR__ . '/configuracion.php';
  *   no es válida (revocada o sin permiso). Un límite de uso (HTTP 429) no se
  *   esquiva con otra clave: se informa a la persona para que lo intente luego.
  */
-function preguntarGemini(string $prompt): ?string {
+function preguntarGemini(string $prompt, int $segundos = 45): ?string {
     $claves = defined('GEMINI_API_KEYS') ? array_filter((array) GEMINI_API_KEYS) : [];
     if (!$claves) {
         error_log("KaloAI: no hay ninguna clave de Gemini configurada (GEMINI_API_KEY)");
@@ -38,7 +38,7 @@ function preguntarGemini(string $prompt): ?string {
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_TIMEOUT        => 45,
+            CURLOPT_TIMEOUT        => $segundos,
         ]);
         $respuesta = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

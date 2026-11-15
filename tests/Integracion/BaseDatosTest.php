@@ -180,4 +180,67 @@ final class BaseDatosTest extends TestCase
         $this->assertSame([], aplicarMigracionesPendientes(self::$pdo));
         $this->assertSame(3, (int) $this->valor("SELECT COUNT(*) FROM rol"));
     }
+
+    public function testMarcarComoHechaUnaComidaDelPlan(): void
+    {
+        $hoy = new DateTimeImmutable('today');
+        $diaHoy = (int) $hoy->format('N') - 1;
+        asignarRecetaAlPlan(self::$pdo, self::LAURA, 2, $diaHoy, 'Almuerzo');
+        $idComida = (int) $this->valor("SELECT cp.id_comida_planificada FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
+                                         WHERE ps.id_usuario = ? AND cp.dia_semana = ? AND cp.momento_comida = 'Almuerzo'", [self::LAURA, $diaHoy]);
+
+        $id = registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->format('Y-m-d'));
+        $this->assertNotNull($id);
+        $this->assertSame($id, registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->format('Y-m-d')), 'Dos clics no duplican');
+        $this->assertSame(620, (int) $this->valor("SELECT calorias FROM registro_comida WHERE id_registro = ?", [$id]));
+
+        // Ni la comida de otra persona ni la de otro día de la semana
+        $this->assertNull(registrarComidaPlanificada(self::$pdo, self::MARCOS, $idComida, $hoy->format('Y-m-d')));
+        $this->assertNull(registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->modify('+1 day')->format('Y-m-d')));
+
+        // El historial se conserva aunque se borre la receta
+        self::$pdo->exec("DELETE FROM comida_planificada WHERE id_receta = 2");
+        self::$pdo->exec("DELETE FROM receta WHERE id_receta = 2");
+        $this->assertSame(620, (int) $this->valor("SELECT calorias FROM registro_comida WHERE id_registro = ?", [$id]));
+        $this->assertNull($this->valor("SELECT id_receta FROM registro_comida WHERE id_registro = ?", [$id]));
+    }
+
+    public function testComidaLibreYBorradoSoloDelDueno(): void
+    {
+        $id = registrarComidaLibre(self::$pdo, self::LAURA, date('Y-m-d'),
+            validarComidaLibre(['descripcion' => 'Pizza', 'momento' => 'Cena', 'calorias' => 850, 'proteinas' => 32]));
+        $this->assertFalse(borrarRegistroComida(self::$pdo, self::MARCOS, $id));
+        $hoy = sumarRegistros(registrosDelDia(self::$pdo, self::LAURA, date('Y-m-d')));
+        $this->assertSame(380.0 + 850.0, $hoy['kcal'], 'Desayuno de los datos de ejemplo + la pizza');
+        $this->assertTrue(borrarRegistroComida(self::$pdo, self::LAURA, $id));
+        $this->assertSame(380.0, caloriasConsumidasPorDia(self::$pdo, self::LAURA, date('Y-m-d'), date('Y-m-d'))[date('Y-m-d')]);
+    }
+
+    public function testRellenarLaSemanaSoloUsaHuecosLibresYNuncaAlergenos(): void
+    {
+        $antes = (int) $this->valor("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan) WHERE ps.id_usuario = ?", [self::LAURA]);
+        $libres = count(huecosLibres(self::$pdo, self::LAURA, ['Merienda']));
+        $this->assertSame(7, $libres);
+
+        $prompts = [];
+        $iaFalsa = function (string $prompt) use (&$prompts) {
+            $prompts[] = $prompt;
+            $receta = fn($titulo, $ingrediente) => ['momento' => 'Merienda', 'titulo' => $titulo, 'calorias' => 150,
+                'macros' => ['proteinas' => 10, 'carbohidratos' => 15, 'grasas' => 5],
+                'ingredientes_usados' => [['nombre' => $ingrediente, 'cantidad' => 30, 'unidad' => 'g']], 'instrucciones' => ['Mezclar.']];
+            return json_encode(['recetas' => [$receta('Yogur con cacahuetes', 'Cacahuetes'), $receta('Fruta con avena', 'Avena')]]);
+        };
+
+        $resultado = rellenarSemanaConIA(self::$pdo, self::LAURA, ['Merienda'], 2, false, '', $iaFalsa);
+        $this->assertSame(['recetas' => 1, 'comidas' => 7, 'sin_hueco' => 0], $resultado);
+        $this->assertCount(1, $prompts, 'Una sola llamada a la IA para toda la semana');
+        $this->assertStringContainsString('Cacahuete', $prompts[0]);
+        $this->assertSame($antes + 7, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan) WHERE ps.id_usuario = ?", [self::LAURA]));
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM receta WHERE titulo LIKE '%cacahuete%'"), 'La receta con alérgeno no se guarda');
+        // Lo que ya estaba planificado no se toca
+        $this->assertSame(1, (int) $this->valor("SELECT id_receta FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan) WHERE ps.id_usuario = ? AND dia_semana = 0 AND momento_comida = 'Desayuno'", [self::LAURA]));
+
+        $this->assertArrayHasKey('error', rellenarSemanaConIA(self::$pdo, self::LAURA, ['Merienda'], 2, false, '', $iaFalsa), 'Ya no quedan huecos');
+        $this->assertArrayHasKey('error', rellenarSemanaConIA(self::$pdo, self::LAURA, ['Cena'], 2, false, '', fn() => 'basura'));
+    }
 }

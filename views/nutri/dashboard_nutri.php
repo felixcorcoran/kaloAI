@@ -38,7 +38,8 @@ $stmt = $pdo->prepare("
     SELECT u.id_usuario, p.nombre, u.correo, p.peso_kg, p.objetivo, p.calorias_netas_objetivo,
            (SELECT pr.peso_kg FROM progreso pr WHERE pr.id_usuario = u.id_usuario AND pr.peso_kg IS NOT NULL ORDER BY pr.fecha ASC LIMIT 1) AS peso_inicial,
            (SELECT MAX(pr.fecha) FROM progreso pr WHERE pr.id_usuario = u.id_usuario) AS ultimo_registro,
-           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario) AS comidas_plan
+           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario) AS comidas_plan,
+           (SELECT COUNT(DISTINCT rc.fecha) FROM registro_comida rc WHERE rc.id_usuario = u.id_usuario AND rc.fecha > DATE_SUB(CURDATE(), INTERVAL 7 DAY)) AS dias_registrados
     FROM usuario u
     JOIN perfil p ON u.id_usuario = p.id_usuario
     WHERE p.id_nutricionista = ?
@@ -147,7 +148,7 @@ include_once __DIR__ . '/../templates/header.php';
                             <div class="min-w-0 flex-1">
                                 <p class="nombre-paciente truncate font-medium k-strong"><?= e($p['nombre'] ?: 'Sin nombre') ?></p>
                                 <p class="correo-paciente truncate text-sm k-muted"><?= e($p['correo']) ?></p>
-                                <p class="mt-0.5 text-xs k-muted"><?= $p['ultimo_registro'] ? 'Último registro: ' . e(formatearFecha($p['ultimo_registro'])) : 'Aún no ha registrado su peso' ?></p>
+                                <p class="mt-0.5 text-xs k-muted"><?= $p['ultimo_registro'] ? 'Último peso: ' . e(formatearFecha($p['ultimo_registro'])) : 'Aún no ha registrado su peso' ?> · Ha apuntado comidas <?= (int) $p['dias_registrados'] ?> de los últimos 7 días</p>
                             </div>
                             <div class="hidden w-28 md:block" title="Comidas planificadas esta semana">
                                 <p class="text-xs k-muted">Plan <span class="tabular-nums k-strong"><?= (int) $p['comidas_plan'] ?>/35</span></p>
