@@ -56,6 +56,8 @@ Abre <http://localhost:8080>. La clave es opcional: sin ella funciona todo menos
 
 ### Estilos
 
+Toda la interfaz usa un mismo sistema de componentes (`k-*`) e iconos; la guía para pantallas nuevas está en [`docs/estilo.md`](docs/estilo.md).
+
 Tailwind se compila a `public/css/tailwind.css`, que se sube al repositorio para que el hosting no necesite Node. Si cambias clases en una vista, recompílalo (la CI avisa si se te olvida):
 
 ```bash

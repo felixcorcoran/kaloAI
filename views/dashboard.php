@@ -290,7 +290,7 @@ $cambioPeso = ($pesoActual !== null && $pesoInicial !== null) ? round($pesoActua
                     <?php endif; ?>
                 </div>
                 <p class="mt-1 text-xs k-muted">Último registro: <?= e(formatearFecha($latestProgressData['fecha'])) ?></p>
-                <div class="mt-4 h-24 flex-1"><canvas id="progressChart" aria-label="Evolución del peso"></canvas></div>
+                <div class="relative mt-4 h-24 min-h-[6rem] flex-1"><canvas id="progressChart" class="absolute inset-0" aria-label="Evolución del peso"></canvas></div>
             <?php else: ?>
                 <div class="k-empty mt-4 flex-1 py-8">
                     <span class="k-empty-icon"><?= icono('activity') ?></span>

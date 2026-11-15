@@ -233,7 +233,7 @@ $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
         <section class="k-card k-card-pad lg:col-span-2">
             <h2 class="k-section-title">Evolución del peso</h2>
             <?php if (count($pesos) >= 2): ?>
-                <div id="chartContainer" class="mt-4 h-64"><canvas id="sparklineChart" aria-label="Gráfico de la evolución del peso"></canvas></div>
+                <div id="chartContainer" class="relative mt-4 h-64"><canvas id="sparklineChart" class="absolute inset-0" aria-label="Gráfico de la evolución del peso"></canvas></div>
             <?php else: ?>
                 <div class="k-empty mt-4 py-10">
                     <span class="k-empty-icon"><?= icono('activity') ?></span>

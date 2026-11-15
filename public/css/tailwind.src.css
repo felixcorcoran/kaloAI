@@ -69,6 +69,12 @@
         --k-shadow-lg: 0 20px 40px -12px rgb(0 0 0 / 0.6);
     }
 
+    /* "hidden" siempre oculta, aunque el elemento tenga una clase con display */
+    [hidden] { display: none !important; }
+
+    /* Los campos ocultos (token CSRF…) no cuentan para el espaciado de space-y-* */
+    [class*="space-y-"] > input[type="hidden"] + :not(input[type="hidden"]) { margin-top: 0; }
+
     /* Páginas de la aplicación (la portada tiene su propio fondo) */
     body.k-app {
         background-color: var(--k-bg);

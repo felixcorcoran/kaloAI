@@ -150,7 +150,8 @@ function normalizarRecetaIA(?string $respuesta, array $objetivo): ?array {
             'carbohidratos' => $macros['carbohidratos'] ?? $macros['carbos'] ?? $macros['carbs'] ?? $objetivo['carbohidratos'],
             'grasas'        => $macros['grasas'] ?? $macros['fats'] ?? $objetivo['grasas'],
         ],
-        'ingredientes_usados' => $ingredientes,
+        // Tras unificar nombres pueden quedar repetidos ("Aceite" y "Aceite de oliva"): se suman
+        'ingredientes_usados' => unificarIngredientes($ingredientes),
         'instrucciones' => $instrucciones,
         'raciones_sugeridas' => $data['raciones_sugeridas'] ?? 1,
     ];
