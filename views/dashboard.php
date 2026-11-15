@@ -11,6 +11,7 @@ $pageTitle = "KaloAI | Panel de Control";
 session_start();
 require_once __DIR__ . '/../core/configuracion.php'; 
 require_once __DIR__ . '/../core/utilidades.php';
+require_once __DIR__ . '/../core/recetas.php';
 
 // Validar que la sesión esté activa; de lo contrario, proteger la ruta
 if (!isset($_SESSION['user_id'])) {
@@ -156,6 +157,52 @@ $stmtSol->execute([$_SESSION['user_id']]);
 // En modo gestión el nutricionista no debe ver (ni responder) las invitaciones del paciente
 $solicitudes = empty($_SESSION['is_impersonating']) ? $stmtSol->fetchAll() : [];
 
+/**
+ * ==========================================================
+ * RESUMEN PARA EL PANEL: semana, despensa, compra, recetas,
+ * restricciones y nutricionista
+ * ==========================================================
+ */
+$diasSemana = DIAS_SEMANA;
+$semana = array_fill(0, 7, ['kcal' => 0.0, 'comidas' => 0]);
+$stmtSemana = $pdo->prepare("SELECT cp.dia_semana, SUM(r.calorias_por_racion * cp.raciones) AS kcal, COUNT(*) AS comidas
+                             FROM comida_planificada cp
+                             JOIN receta r ON cp.id_receta = r.id_receta
+                             JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
+                             WHERE ps.id_usuario = ? GROUP BY cp.dia_semana");
+$stmtSemana->execute([$userId]);
+foreach ($stmtSemana->fetchAll() as $fila) {
+    $semana[(int) $fila['dia_semana']] = ['kcal' => (float) $fila['kcal'], 'comidas' => (int) $fila['comidas']];
+}
+$huecosPlanificados = array_sum(array_column($semana, 'comidas'));
+
+// Lista de la compra pendiente (misma lógica que lista_compra.php)
+$stmtNec = $pdo->prepare("SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unidad
+                          FROM comida_planificada cp
+                          JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
+                          JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
+                          WHERE ps.id_usuario = ?");
+$stmtNec->execute([$userId]);
+$stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
+$stmtInv->execute([$userId]);
+$inventario = $stmtInv->fetchAll();
+$pendientesCompra = calcularListaCompra($stmtNec->fetchAll(), $inventario);
+
+$stmtRec = $pdo->prepare("SELECT COUNT(*) AS total, COALESCE(SUM(generado_ia), 0) AS ia FROM receta WHERE id_usuario_creador = ?");
+$stmtRec->execute([$userId]);
+$recetasResumen = $stmtRec->fetch();
+
+$stmtRes = $pdo->prepare("SELECT nombre_ingrediente, nota FROM ingrediente_prohibido WHERE id_usuario = ? ORDER BY nombre_ingrediente");
+$stmtRes->execute([$userId]);
+$restricciones = $stmtRes->fetchAll();
+
+$stmtNutri = $pdo->prepare("SELECT pn.nombre, un.correo FROM perfil p
+                            JOIN usuario un ON un.id_usuario = p.id_nutricionista
+                            LEFT JOIN perfil pn ON pn.id_usuario = p.id_nutricionista
+                            WHERE p.id_usuario = ?");
+$stmtNutri->execute([$userId]);
+$miNutricionista = $stmtNutri->fetch();
+
 // Carga del componente de cabecera (antes de cualquier HTML: el <!DOCTYPE> va primero)
 include_once __DIR__ . '/templates/header.php';
 ?>
@@ -167,6 +214,7 @@ $mesesEsp = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'ag
 $fechaHoy = $diaHoyNombre . ', ' . date('j') . ' de ' . $mesesEsp[date('n') - 1];
 $nombre = getPrimerNombre($profileData['nombre'] ?? '');
 $tienePerfil = $profileData && ($profileData['calorias_netas_objetivo'] ?? 0) > 0;
+$indiceHoy = (int) date('N') - 1; // 0 = lunes
 
 // Lo planificado hoy, sumando raciones
 $hoy = ['kcal' => 0, 'p' => 0, 'c' => 0, 'g' => 0];
@@ -178,12 +226,24 @@ foreach ($comidasHoy as $c) {
     $hoy['g'] += $c['grasas_g_por_racion'] * $r;
 }
 $metaKcal = (int) ($profileData['calorias_netas_objetivo'] ?? 0);
-$pctKcal = $metaKcal > 0 ? min(100, round($hoy['kcal'] / $metaKcal * 100)) : 0;
+$metas = ['p' => (int) ($profileData['proteinas_objetivo_g'] ?? 0), 'c' => (int) ($profileData['carbohidratos_objetivo_g'] ?? 0), 'g' => (int) ($profileData['grasas_objetivo_g'] ?? 0)];
+$pctKcal = $metaKcal > 0 ? (int) round($hoy['kcal'] / $metaKcal * 100) : 0;
 $restantes = $metaKcal - (int) round($hoy['kcal']);
 
-$pesoActual = $latestProgressData['peso_kg'] ?? null;
-$pesoInicial = $progresoData[0]['peso_kg'] ?? null;
-$cambioPeso = ($pesoActual !== null && $pesoInicial !== null) ? round($pesoActual - $pesoInicial, 1) : null;
+$pesos = array_values(array_filter($progresoData, fn($p) => $p['peso_kg'] !== null));
+$pesoActual = $pesos ? (float) end($pesos)['peso_kg'] : null;
+$pesoInicial = $pesos ? (float) $pesos[0]['peso_kg'] : null;
+$cambioPeso = count($pesos) > 1 ? round($pesoActual - $pesoInicial, 1) : null;
+$cinturas = array_values(array_filter(array_column($progresoData, 'cintura_cm'), fn($c) => $c !== null && $c > 0));
+$cambioCintura = count($cinturas) > 1 ? round(end($cinturas) - $cinturas[0], 1) : null;
+
+$diasConComida = count(array_filter($semana, fn($d) => $d['comidas'] > 0));
+$kcalSemana = array_column($semana, 'kcal');
+$mediaSemana = $diasConComida ? array_sum($kcalSemana) / $diasConComida : 0;
+
+$coma = fn($n, $d = 1) => number_format((float) $n, $d, ',', '.');
+$entero = fn($n) => number_format((float) $n, 0, ',', '.');
+$tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo Medio)' => 'k-badge-warn'];
 ?>
 
 <div class="k-container k-page">
@@ -192,9 +252,9 @@ $cambioPeso = ($pesoActual !== null && $pesoInicial !== null) ? round($pesoActua
     <?php foreach ($solicitudes as $sol): ?>
         <div class="k-card k-card-pad mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex items-start gap-3">
-                <span class="k-icon-tile"><?= icono('user-plus') ?></span>
+                <span class="k-icon-tile k-tile-indigo"><?= icono('user-plus') ?></span>
                 <div>
-                    <p class="font-semibold k-strong"><?= e($sol['nombre_nutri']) ?> quiere ser tu nutricionista</p>
+                    <p class="font-medium k-strong"><?= e($sol['nombre_nutri']) ?> quiere ser tu nutricionista</p>
                     <p class="text-sm k-muted">Podrá ver y ajustar tu plan, tus recetas y tu progreso.</p>
                 </div>
             </div>
@@ -216,11 +276,14 @@ $cambioPeso = ($pesoActual !== null && $pesoInicial !== null) ? round($pesoActua
     <!-- CABECERA -->
     <div class="k-page-head">
         <div>
-            <p class="k-eyebrow"><?= e($fechaHoy) ?></p>
-            <h1 class="k-title mt-1">Hola, <?= $nombre ?></h1>
-            <p class="k-subtitle">Esto es lo que tienes planificado para hoy.</p>
+            <span class="k-pill"><?= icono('calendar') ?><?= e($fechaHoy) ?></span>
+            <h1 class="k-title mt-3">Hola, <?= $nombre ?></h1>
+            <p class="k-subtitle">Así va tu día y tu semana.</p>
         </div>
-        <a href="user/generar_receta.php" class="k-btn k-btn-primary"><?= icono('sparkles') ?>Generar receta</a>
+        <div class="flex gap-2">
+            <a href="user/progreso.php" class="k-btn k-btn-secondary"><?= icono('activity') ?>Registrar peso</a>
+            <a href="user/generar_receta.php" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Generar receta</a>
+        </div>
     </div>
 
     <?php if (!$tienePerfil): ?>
@@ -231,126 +294,224 @@ $cambioPeso = ($pesoActual !== null && $pesoInicial !== null) ? round($pesoActua
         </div>
     <?php endif; ?>
 
-    <div class="grid gap-6 lg:grid-cols-3">
-
-        <!-- CALORÍAS Y MACROS DE HOY -->
-        <section class="k-card k-card-pad flex flex-col lg:col-span-2">
-            <div class="flex items-start justify-between gap-4">
-                <div>
-                    <h2 class="k-section-title">Calorías de hoy</h2>
-                    <p class="text-sm k-muted">Según las comidas que tienes en el plan.</p>
-                </div>
-                <a href="user/perfil.php" class="k-btn k-btn-ghost k-btn-sm">Ajustar objetivo</a>
+    <!-- CIFRAS PRINCIPALES -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <!-- Calorías de hoy -->
+        <a href="user/planificacion_semanal.php" class="k-card k-card-link flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Calorías de hoy</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-orange"><?= icono('flame', 'h-4 w-4') ?></span></div>
+            <div class="mt-3 flex items-baseline gap-2">
+                <p class="k-stat-value"><?= $entero($hoy['kcal']) ?></p>
+                <?php if ($tienePerfil): ?><span class="text-sm k-muted">/ <?= $entero($metaKcal) ?> kcal</span><?php endif; ?>
             </div>
-
-            <div class="mt-5 flex flex-wrap items-end gap-x-3 gap-y-1">
-                <p class="font-display text-4xl font-bold tracking-tight tabular-nums k-strong"><?= number_format($hoy['kcal'], 0, ',', '.') ?></p>
-                <p class="pb-1 text-sm k-muted">
-                    <?php if ($tienePerfil): ?>
-                        de <?= number_format($metaKcal, 0, ',', '.') ?> kcal ·
-                        <?= $restantes >= 0 ? 'te quedan ' . number_format($restantes, 0, ',', '.') : 'te pasas ' . number_format(-$restantes, 0, ',', '.') ?>
-                    <?php else: ?>
-                        kcal planificadas
-                    <?php endif; ?>
-                </p>
+            <div class="mt-auto pt-4">
+                <div class="k-track h-2"><div class="k-bar <?= $restantes < -$metaKcal * 0.1 ? 'k-bar-over' : '' ?>" style="width: <?= min(100, $pctKcal) ?>%"></div></div>
+                <p class="mt-2 text-xs k-muted"><?= !$tienePerfil ? 'Sin objetivo todavía' : ($restantes >= 0 ? 'Te quedan ' . $entero($restantes) . ' kcal' : 'Te pasas ' . $entero(-$restantes) . ' kcal') ?></p>
             </div>
-            <?php if ($tienePerfil): ?>
-                <div class="k-track mt-3 h-2.5"><div class="k-bar <?= $restantes < -$metaKcal * 0.1 ? 'k-bar-over' : '' ?>" style="width: <?= $pctKcal ?>%"></div></div>
-            <?php endif; ?>
+        </a>
 
-            <div class="mt-auto grid gap-4 pt-6 sm:grid-cols-3">
-                <?php foreach ([['k-macro-p', 'Proteína', $hoy['p'], $profileData['proteinas_objetivo_g'] ?? 0],
-                                ['k-macro-c', 'Carbohidratos', $hoy['c'], $profileData['carbohidratos_objetivo_g'] ?? 0],
-                                ['k-macro-f', 'Grasa', $hoy['g'], $profileData['grasas_objetivo_g'] ?? 0]] as [$clase, $etiqueta, $actual, $objetivo]): ?>
-                    <div class="<?= $clase ?>">
-                        <div class="mb-1.5 flex items-center justify-between text-sm">
-                            <span class="flex items-center gap-2 font-medium k-strong"><span class="k-macro-dot"></span><?= $etiqueta ?></span>
-                            <span class="tabular-nums k-muted"><?= round($actual) ?><?= $objetivo ? ' / ' . (int) $objetivo : '' ?> g</span>
+        <!-- Peso -->
+        <a href="user/progreso.php" class="k-card k-card-link flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Peso</p><span class="k-icon-tile h-8 w-8 rounded-lg"><?= icono('activity', 'h-4 w-4') ?></span></div>
+            <div class="mt-3 flex items-center gap-3">
+                <p class="k-stat-value"><?= $pesoActual !== null ? $coma($pesoActual) : '—' ?><span class="k-stat-unit">kg</span></p>
+                <?php if ($cambioPeso !== null): ?>
+                    <span class="k-delta <?= $cambioPeso <= 0 ? 'k-delta-ok' : 'k-delta-warn' ?>">
+                        <span class="k-delta-icon"><?= icono($cambioPeso <= 0 ? 'trend-down' : 'trend-up') ?></span><?= ($cambioPeso > 0 ? '+' : '') . $coma($cambioPeso) ?> kg
+                    </span>
+                <?php endif; ?>
+            </div>
+            <div class="relative mt-auto h-14 pt-2"><canvas id="pesoMini" class="absolute inset-0" aria-hidden="true"></canvas></div>
+        </a>
+
+        <!-- Plan de la semana -->
+        <a href="user/planificacion_semanal.php" class="k-card k-card-link flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Plan de la semana</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-indigo"><?= icono('calendar', 'h-4 w-4') ?></span></div>
+            <div class="mt-3 flex items-baseline gap-2"><p class="k-stat-value"><?= $huecosPlanificados ?></p><span class="text-sm k-muted">/ 35 comidas</span></div>
+            <div class="mt-auto flex items-end gap-1.5 pt-4" aria-label="Comidas planificadas por día">
+                <?php foreach ($semana as $i => $d): ?>
+                    <div class="flex flex-1 flex-col items-center gap-1">
+                        <div class="flex h-9 w-full items-end overflow-hidden rounded-md" style="background-color: var(--k-surface-2);">
+                            <div class="w-full rounded-md" style="height: <?= $d['comidas'] * 20 ?>%; background-color: <?= $i === $indiceHoy ? 'var(--k-brand)' : 'var(--k-indigo)' ?>; opacity: <?= $i === $indiceHoy ? 1 : 0.7 ?>;"></div>
                         </div>
-                        <div class="k-track"><div class="k-bar k-macro-bar" style="width: <?= $objetivo ? min(100, round($actual / $objetivo * 100)) : 0 ?>%"></div></div>
+                        <span class="text-[10px] k-muted"><?= mb_substr($diasSemana[$i], 0, 1) ?></span>
                     </div>
                 <?php endforeach; ?>
             </div>
+        </a>
+
+        <!-- Compra -->
+        <a href="user/lista_compra.php" class="k-card k-card-link flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Lista de la compra</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-amber"><?= icono('cart', 'h-4 w-4') ?></span></div>
+            <div class="mt-3 flex items-baseline gap-2"><p class="k-stat-value"><?= count($pendientesCompra) ?></p><span class="text-sm k-muted"><?= count($pendientesCompra) === 1 ? 'producto' : 'productos' ?> por comprar</span></div>
+            <div class="mt-auto flex flex-wrap gap-1.5 pt-4">
+                <?php foreach (array_slice($pendientesCompra, 0, 3) as $item): ?>
+                    <span class="k-badge"><?= e($item['nombre']) ?></span>
+                <?php endforeach; ?>
+                <?php if (count($pendientesCompra) > 3): ?><span class="k-badge">+<?= count($pendientesCompra) - 3 ?></span><?php endif; ?>
+                <?php if (!$pendientesCompra): ?><span class="k-badge k-badge-ok"><?= icono('check') ?>No te falta nada</span><?php endif; ?>
+            </div>
+        </a>
+    </div>
+
+    <!-- SEMANA Y MACROS -->
+    <div class="mt-4 grid gap-4 lg:grid-cols-3">
+        <section class="k-card k-card-pad flex flex-col lg:col-span-2">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="k-section-title">Calorías de la semana</h2>
+                    <p class="mt-0.5 text-sm k-muted">Lo planificado cada día<?= $tienePerfil ? ' frente a tu objetivo de ' . $entero($metaKcal) . ' kcal' : '' ?>.</p>
+                </div>
+                <div class="text-right">
+                    <p class="font-display text-xl font-semibold tabular-nums k-strong"><?= $entero($mediaSemana) ?> <span class="text-sm font-normal k-muted">kcal/día</span></p>
+                    <p class="text-xs k-muted">media de los días con plan</p>
+                </div>
+            </div>
+            <div class="relative mt-5 min-h-[16rem] flex-1"><canvas id="semanaChart" class="absolute inset-0" aria-label="Calorías planificadas por día"></canvas></div>
         </section>
 
-        <!-- PESO -->
         <section class="k-card k-card-pad flex flex-col">
-            <div class="flex items-start justify-between gap-4">
-                <h2 class="k-section-title">Peso</h2>
-                <a href="user/progreso.php" class="k-btn k-btn-ghost k-btn-sm">Ver progreso</a>
-            </div>
-            <?php if ($pesoActual !== null): ?>
-                <div class="mt-4 flex items-end gap-3">
-                    <p class="font-display text-4xl font-bold tracking-tight tabular-nums k-strong"><?= number_format($pesoActual, 1, ',', '') ?><span class="k-stat-unit">kg</span></p>
-                    <?php if ($cambioPeso !== null && count($progresoData) > 1): ?>
-                        <span class="k-badge <?= $cambioPeso <= 0 ? 'k-badge-ok' : 'k-badge-warn' ?> mb-1.5">
-                            <?= icono($cambioPeso <= 0 ? 'trend-down' : 'trend-up', 'h-3.5 w-3.5') ?>
-                            <?= ($cambioPeso > 0 ? '+' : '') . number_format($cambioPeso, 1, ',', '') ?> kg
-                        </span>
-                    <?php endif; ?>
+            <h2 class="k-section-title">Macros de hoy</h2>
+            <p class="mt-0.5 text-sm k-muted">Planificado frente a objetivo.</p>
+            <div class="relative mx-auto mt-4 h-44 w-44">
+                <canvas id="macrosChart" class="absolute inset-0" aria-label="Reparto de macronutrientes de hoy"></canvas>
+                <div class="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                    <div><p class="font-display text-2xl font-semibold tabular-nums k-strong"><?= $entero($hoy['kcal']) ?></p><p class="text-xs k-muted">kcal</p></div>
                 </div>
-                <p class="mt-1 text-xs k-muted">Último registro: <?= e(formatearFecha($latestProgressData['fecha'])) ?></p>
-                <div class="relative mt-4 h-24 min-h-[6rem] flex-1"><canvas id="progressChart" class="absolute inset-0" aria-label="Evolución del peso"></canvas></div>
+            </div>
+            <ul class="mt-auto space-y-3 pt-5">
+                <?php foreach ([['k-macro-p', 'Proteína', 'p'], ['k-macro-c', 'Carbohidratos', 'c'], ['k-macro-f', 'Grasa', 'g']] as [$clase, $etiqueta, $k]): ?>
+                    <li class="<?= $clase ?>">
+                        <div class="mb-1 flex items-center justify-between text-sm">
+                            <span class="flex items-center gap-2 k-strong"><span class="k-macro-dot"></span><?= $etiqueta ?></span>
+                            <span class="tabular-nums k-muted"><?= round($hoy[$k]) ?><?= $metas[$k] ? ' / ' . $metas[$k] : '' ?> g</span>
+                        </div>
+                        <div class="k-track"><div class="k-bar k-macro-bar" style="width: <?= $metas[$k] ? min(100, round($hoy[$k] / $metas[$k] * 100)) : 0 ?>%"></div></div>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </section>
+    </div>
+
+    <!-- COMIDAS DE HOY Y PESO -->
+    <div class="mt-4 grid gap-4 lg:grid-cols-3">
+        <section class="k-card lg:col-span-2">
+            <div class="k-card-head">
+                <h2 class="k-section-title">Comidas de hoy</h2>
+                <a href="user/planificacion_semanal.php" class="k-btn k-btn-ghost k-btn-sm">Ver la semana <?= icono('chevron-right') ?></a>
+            </div>
+            <ul class="k-list">
+                <?php foreach ($momentosDefinidos as $momento):
+                    $comida = $comidasHoy[$momento] ?? null;
+                    $estilo = $comida ? estiloTipoReceta(tipoRecetaParaMomento($momento)) : null; ?>
+                    <li class="flex items-center gap-4 px-5 py-3.5 sm:px-6">
+                        <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-lg <?= $comida ? '' : 'border border-dashed k-muted' ?>" style="background-color: var(--k-surface-2); <?= $comida ? '' : 'border-color: var(--k-border-strong);' ?>" aria-hidden="true"><?= $comida ? $estilo['emoji'] : icono('utensils', 'h-4 w-4') ?></span>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs k-muted"><?= e($momento) ?></p>
+                            <?php if ($comida): ?>
+                                <a href="user/detalle_receta.php?id=<?= (int) $comida['id_receta'] ?>" class="block truncate font-medium k-strong hover:underline"><?= e($comida['titulo']) ?></a>
+                            <?php else: ?>
+                                <p class="text-sm k-muted">Nada planificado</p>
+                            <?php endif; ?>
+                        </div>
+                        <?php if ($comida): ?>
+                            <span class="hidden text-sm tabular-nums sm:block k-muted"><?= (int) $comida['calorias_por_racion'] ?> kcal</span>
+                            <span class="k-badge k-badge-ok">Planificada</span>
+                        <?php else: ?>
+                            <a href="user/generar_receta.php?dia=<?= urlencode($diaHoyNombre) ?>&momento=<?= urlencode($momento) ?>" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>Añadir</a>
+                        <?php endif; ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </section>
+
+        <section class="k-card k-card-pad flex flex-col">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <h2 class="k-section-title">Evolución del peso</h2>
+                    <p class="mt-0.5 text-sm k-muted"><?= count($pesos) ?> registros</p>
+                </div>
+                <a href="user/progreso.php" class="k-btn k-btn-ghost k-btn-sm">Ver todo</a>
+            </div>
+            <?php if (count($pesos) >= 2): ?>
+                <div class="relative mt-4 min-h-[10rem] flex-1"><canvas id="progressChart" class="absolute inset-0" aria-label="Evolución del peso"></canvas></div>
+                <dl class="mt-4 grid grid-cols-3 gap-2 border-t pt-4 text-center" style="border-color: var(--k-border);">
+                    <div><dt class="text-[11px] k-muted">Inicio</dt><dd class="font-medium tabular-nums k-strong"><?= $coma($pesoInicial) ?> kg</dd></div>
+                    <div><dt class="text-[11px] k-muted">Ahora</dt><dd class="font-medium tabular-nums k-strong"><?= $coma($pesoActual) ?> kg</dd></div>
+                    <div><dt class="text-[11px] k-muted">Cintura</dt><dd class="font-medium tabular-nums k-strong"><?= $cambioCintura !== null ? (($cambioCintura > 0 ? '+' : '') . $coma($cambioCintura) . ' cm') : '—' ?></dd></div>
+                </dl>
             <?php else: ?>
                 <div class="k-empty mt-4 flex-1 py-8">
                     <span class="k-empty-icon"><?= icono('activity') ?></span>
-                    <p class="text-sm k-muted">Aún no has registrado tu peso.</p>
-                    <a href="user/progreso.php" class="k-btn k-btn-secondary k-btn-sm mt-3">Registrar ahora</a>
+                    <p class="text-sm k-muted">Con dos registros verás aquí tu evolución.</p>
+                    <a href="user/progreso.php" class="k-btn k-btn-secondary k-btn-sm mt-3">Registrar peso</a>
                 </div>
             <?php endif; ?>
         </section>
     </div>
 
-    <!-- COMIDAS DE HOY -->
-    <section class="k-card mt-6">
-        <div class="k-card-head">
-            <h2 class="k-section-title">Comidas de hoy</h2>
-            <a href="user/planificacion_semanal.php" class="k-btn k-btn-ghost k-btn-sm">Ver la semana <?= icono('chevron-right') ?></a>
-        </div>
-        <ul class="k-list">
-            <?php foreach ($momentosDefinidos as $momento):
-                $comida = $comidasHoy[$momento] ?? null; ?>
-                <li class="flex items-center gap-4 px-5 py-4 sm:px-6">
-                    <span class="w-24 shrink-0 text-xs font-semibold uppercase tracking-wider k-muted sm:w-28"><?= e($momento) ?></span>
-                    <?php if ($comida): ?>
-                        <a href="user/detalle_receta.php?id=<?= (int) $comida['id_receta'] ?>" class="min-w-0 flex-1 truncate font-medium k-strong hover:underline"><?= e($comida['titulo']) ?></a>
-                        <span class="shrink-0 text-sm tabular-nums k-muted"><?= (int) $comida['calorias_por_racion'] ?> kcal</span>
-                    <?php else: ?>
-                        <span class="flex-1 text-sm k-muted">Sin planificar</span>
-                        <a href="user/generar_receta.php?dia=<?= urlencode($diaHoyNombre) ?>&momento=<?= urlencode($momento) ?>" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>Añadir</a>
-                    <?php endif; ?>
-                </li>
-            <?php endforeach; ?>
-        </ul>
-    </section>
-</div>
+    <!-- RESUMEN: RESTRICCIONES, NUTRICIONISTA Y BIBLIOTECA -->
+    <div class="mt-4 grid gap-4 md:grid-cols-3">
+        <a href="user/perfil.php" class="k-card k-card-link k-card-pad">
+            <div class="flex items-center gap-3"><span class="k-icon-tile k-tile-danger"><?= icono('ban') ?></span><h2 class="k-section-title">Lo que la IA evita</h2></div>
+            <div class="mt-4 flex flex-wrap gap-1.5">
+                <?php foreach ($restricciones as $r): ?>
+                    <span class="k-badge <?= $tiposRes[$r['nota']] ?? '' ?>"><?= e($r['nombre_ingrediente']) ?></span>
+                <?php endforeach; ?>
+                <?php if (!$restricciones): ?><p class="text-sm k-muted">No tienes alergias ni intolerancias marcadas.</p><?php endif; ?>
+            </div>
+        </a>
 
-<?php
-// Accesos directos a cada sección, con su color
-$accesos = [
-    ['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus menús de los 7 días', 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300'],
-    ['user/mis_recetas.php', 'book', 'Mis recetas', 'Las que generaste y las tuyas', 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300'],
-    ['user/lista_compra.php', 'cart', 'Lista de la compra', 'Lo que te falta para la semana', 'bg-teal-50 text-teal-700'],
-    ['user/inventario.php', 'package', 'Despensa', 'Lo que ya tienes en casa', 'bg-amber-50 text-amber-700'],
-];
-?>
-<div class="k-container -mt-4 pb-10">
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <?php foreach ($accesos as [$url, $ic, $titulo, $texto, $color]): ?>
+        <div class="k-card k-card-pad">
+            <div class="flex items-center gap-3"><span class="k-icon-tile k-tile-indigo"><?= icono('users') ?></span><h2 class="k-section-title">Tu nutricionista</h2></div>
+            <?php if ($miNutricionista): ?>
+                <div class="mt-4 flex items-center gap-3">
+                    <span class="k-avatar" aria-hidden="true"><?= e(mb_strtoupper(mb_substr($miNutricionista['nombre'] ?: $miNutricionista['correo'], 0, 1, 'UTF-8'), 'UTF-8')) ?></span>
+                    <div class="min-w-0"><p class="truncate font-medium k-strong"><?= e($miNutricionista['nombre'] ?: 'Nutricionista') ?></p><p class="truncate text-sm k-muted"><?= e($miNutricionista['correo']) ?></p></div>
+                </div>
+                <p class="mt-3 text-xs k-muted">Puede ver y ajustar tu plan.</p>
+            <?php else: ?>
+                <p class="mt-4 text-sm k-muted">Aún no tienes. Si trabajas con uno, pídele que te invite con tu correo.</p>
+            <?php endif; ?>
+        </div>
+
+        <a href="user/mis_recetas.php" class="k-card k-card-link k-card-pad">
+            <div class="flex items-center gap-3"><span class="k-icon-tile k-tile-rose"><?= icono('book') ?></span><h2 class="k-section-title">Tu cocina</h2></div>
+            <dl class="mt-4 grid grid-cols-3 gap-2">
+                <div><dt class="text-[11px] k-muted">Recetas</dt><dd class="k-stat-value text-xl"><?= (int) $recetasResumen['total'] ?></dd></div>
+                <div><dt class="text-[11px] k-muted">Con IA</dt><dd class="k-stat-value text-xl"><?= (int) $recetasResumen['ia'] ?></dd></div>
+                <div><dt class="text-[11px] k-muted">En despensa</dt><dd class="k-stat-value text-xl"><?= count($inventario) ?></dd></div>
+            </dl>
+        </a>
+    </div>
+
+    <!-- ACCESOS -->
+    <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <?php foreach ([['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus menús de los 7 días', 'k-tile-indigo'],
+                        ['user/mis_recetas.php', 'book', 'Mis recetas', 'Las tuyas y las de la IA', 'k-tile-rose'],
+                        ['user/lista_compra.php', 'cart', 'Lista de la compra', 'Lo que te falta comprar', ''],
+                        ['user/inventario.php', 'package', 'Despensa', 'Lo que ya tienes en casa', 'k-tile-amber']] as [$url, $ic, $titulo, $texto, $tile]): ?>
             <a href="<?= $url ?>" class="k-card k-card-link group flex items-center gap-4 p-5">
-                <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl <?= $color ?> transition-transform group-hover:scale-110"><?= icono($ic) ?></span>
-                <span class="min-w-0">
-                    <span class="block font-semibold k-strong"><?= $titulo ?></span>
+                <span class="k-icon-tile <?= $tile ?> transition-transform group-hover:scale-105"><?= icono($ic) ?></span>
+                <span class="min-w-0 flex-1">
+                    <span class="block font-medium k-strong"><?= $titulo ?></span>
                     <span class="block truncate text-sm k-muted"><?= $texto ?></span>
                 </span>
+                <?= icono('chevron-right', 'h-4 w-4 shrink-0 k-muted transition-transform group-hover:translate-x-0.5') ?>
             </a>
         <?php endforeach; ?>
     </div>
 </div>
 
 <script>
-    // Datos para el gráfico de peso (main.js)
-    window.dashboardData = { progreso: <?= $jsProgresoData ?> };
+    // Datos para los gráficos del panel (main.js)
+    window.dashboardData = <?= json_html([
+        'progreso' => array_map(fn($p) => ['fecha' => $p['fecha'], 'peso_kg' => $p['peso_kg']], $pesos),
+        'semana'   => array_map(fn($d) => round($d['kcal']), $semana),
+        'dias'     => array_map(fn($d) => mb_substr($d, 0, 3), DIAS_SEMANA),
+        'hoy'      => $indiceHoy,
+        'meta'     => $metaKcal,
+        'macros'   => [round($hoy['p'] * 4), round($hoy['c'] * 4), round($hoy['g'] * 9)],
+    ]) ?>;
 </script>
 
 <?php include_once __DIR__ . '/templates/footer.php'; ?>

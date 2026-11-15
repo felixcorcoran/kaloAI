@@ -19,9 +19,9 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        // Inter como fuente base y Plus Jakarta Sans para titulares (font-display)
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
-        display: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // DM Sans en toda la web (texto, titulares y cifras)
+        sans: ['"DM Sans"', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        display: ['"DM Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
     },
   },

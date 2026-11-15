@@ -17,6 +17,7 @@
         </nav>
     </div>
 </footer>
+</div><!-- /.k-with-sidebar (abierto en header.php) -->
 <?php else: ?>
 <footer class="relative overflow-hidden bg-gray-950 text-gray-400">
     <!-- Detalle de marca: filo teal arriba y un resplandor muy suave -->
@@ -65,12 +66,13 @@
 
 <!-- JavaScript de la web y librería de gráficos -->
 <script src="<?= BASE_URL ?>public/js/main.js?v=<?= @filemtime(__DIR__ . '/../../public/js/main.js') ?>"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
     // En modo oscuro, los textos y las líneas de los gráficos en tonos claros
-    if (window.Chart && document.documentElement.classList.contains('dark')) {
-        Chart.defaults.color = '#aab6b4';
-        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
+    if (window.Chart) {
+        Chart.defaults.font.family = '"DM Sans", ui-sans-serif, system-ui, sans-serif';
+        Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--k-muted').trim() || '#71717a';
+        Chart.defaults.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--k-border').trim() || 'rgba(0,0,0,0.07)';
     }
 </script>
 </body>
