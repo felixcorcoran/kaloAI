@@ -5,6 +5,8 @@
  * cada visita y su propia documentación desaconseja usar en producción.
  */
 module.exports = {
+  // El modo oscuro se activa con la clase .dark en <html> (views/templates/tema.php)
+  darkMode: 'class',
   content: [
     './index.php',
     './views/**/*.php',
@@ -13,10 +15,7 @@ module.exports = {
   ],
   // main.js construye estas clases con plantillas (`text-${m.color}-600`),
   // así que no aparecen enteras en el código
-  safelist: [
-    { pattern: /^(text)-(blue|orange|red)-600$/ },
-    { pattern: /^(bg)-(blue|orange|red)-500$/ },
-  ],
+  safelist: [],
   theme: {
     extend: {
       fontFamily: {

@@ -51,10 +51,9 @@ if ($diaUrl) {
     $caloriasActuales = $actual['total'] ?? 0;
 
     // Obtener la meta TDEE (Gasto calórico total) del perfil
-    $stmtMeta = $pdo->prepare("SELECT tdee_calorias FROM perfil WHERE id_usuario = ?");
+    $stmtMeta = $pdo->prepare("SELECT COALESCE(calorias_netas_objetivo, tdee_calorias) FROM perfil WHERE id_usuario = ?");
     $stmtMeta->execute([$userId]);
-    $perfil = $stmtMeta->fetch();
-    $meta = $perfil['tdee_calorias'] ?? 2000;
+    $meta = (float) ($stmtMeta->fetchColumn() ?: 2000);
 
     // Si excede el 110% de la meta, bloqueamos la generación para proteger el objetivo
     if ($caloriasActuales >= ($meta * 1.1)) {
@@ -136,265 +135,175 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['seleccionar_existente
 }
 
 // INICIO DE LA VISTA (FRONTEND)
-$pageTitle = "KaloAI | Generador de Recetas Inteligente";
+$pageTitle = "KaloAI | Generar receta con IA";
 
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php';
 ?>
+<?php
+// Contexto: si se viene de un hueco del plan, la receta irá a ese día y momento
+$enPlan = $diaUrl && $momentoUrl;
+?>
 
-<!-- CONTENEDOR PRINCIPAL: Ajustado para la interfaz del generador de recetas -->
-<div class="container mx-auto px-4 py-8">
-    
-    <!-- CABECERA: Navegación contextual (vuelve a la planificación o a la biblioteca) -->
-    <div class="flex items-center group">
-        <a href="<?= $diaUrl ? 'planificacion_semanal.php' : 'mis_recetas.php' ?>" class="mr-4 bg-teal-50 p-3 rounded-2xl text-teal-600 hover:bg-teal-600 hover:text-white transition-all shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7" />
-            </svg>
-        </a>
-        <h1 class="text-5xl font-black text-gray-900 italic tracking-tight">
-            Chef <span class="text-teal-600">IA</span>
-        </h1>
-    </div>
-    
-    <!-- SUBTÍTULO DINÁMICO: Indica si estamos planificando un día específico del calendario -->
-    <?php if($diaUrl && $momentoUrl): ?>
-        <p class="text-gray-500 font-medium mt-4 ml-16 flex items-center gap-2 pb-8" >
-            <span class="w-2 h-2 bg-teal-500 rounded-full animate-pulse"></span>
-            Planificando <span class="text-teal-600 font-bold"><?= htmlspecialchars($momentoUrl) ?></span> para el <span class="font-bold text-gray-800"><?= htmlspecialchars($diaUrl) ?></span>
-        </p>
-    <?php else: ?>
-        <p class="text-gray-500 font-medium mt-4 ml-16 pb-8">Crea recetas inteligentes basadas en tus metas.</p>
-    <?php endif; ?>
-
-    <!-- GESTIÓN DE ERRORES: Feedback visual si la API de IA falla -->
-    <?php if ($errorIA): ?>
-        <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-8 rounded-r-2xl animate-fade-in">
-            <p class="text-red-700 text-xs font-bold uppercase tracking-wide">⚠️ <?= htmlspecialchars($errorIA) ?></p>
+<div class="k-container k-page">
+    <a href="<?= $diaUrl ? 'planificacion_semanal.php' : 'mis_recetas.php' ?>" class="k-back">
+        <?= icono('chevron-left', 'h-4 w-4') ?><?= $diaUrl ? 'Plan semanal' : 'Mis recetas' ?>
+    </a>
+    <div class="k-page-head">
+        <div>
+            <h1 class="k-title">Generar receta con IA</h1>
+            <p class="k-subtitle">
+                <?php if ($enPlan): ?>
+                    Para el <strong class="k-strong"><?= e(mb_strtolower($momentoUrl, 'UTF-8')) ?></strong> del <strong class="k-strong"><?= e(mb_strtolower($diaUrl, 'UTF-8')) ?></strong>. Se ajusta a las calorías que te quedan ese día y respeta tus alergias.
+                <?php else: ?>
+                    Una receta para una ración, ajustada a tus objetivos y sin los alimentos que tienes marcados como alergia o intolerancia.
+                <?php endif; ?>
+            </p>
         </div>
+    </div>
+
+    <?php if ($errorIA): ?>
+        <div class="k-alert k-alert-error mb-6"><?= icono('alert') ?><p><?= e($errorIA) ?></p></div>
     <?php endif; ?>
 
-    <div class="grid grid-cols-1 gap-10">
-        
-        <!-- SECCIÓN 1: Formulario de Configuración para la IA -->
-        <section class="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-sm border border-gray-100 relative">
-            <div class="flex items-center gap-4 mb-8">
-                <div class="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center text-2xl shadow-inner">✨</div>
-                <div>
-                    <h2 class="text-xl font-black text-gray-800 italic">Configura tu receta</h2>
-                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">KaloAI optimizará la receta según tus metas</p>
-                </div>
+    <div class="grid items-start gap-6 lg:grid-cols-5">
+        <!-- FORMULARIO -->
+        <form id="formGeneradorIA" method="POST" class="k-card k-card-pad space-y-6 lg:sticky lg:top-24 lg:col-span-2">
+            <?= campoCsrf() ?>
+            <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
+            <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
+
+            <?php if (!$momentoUrl): ?>
+                <fieldset>
+                    <legend class="k-label">¿Para qué comida?</legend>
+                    <div class="grid grid-cols-2 gap-2">
+                        <?php foreach (['Desayuno', 'Almuerzo', 'Snack', 'Cena'] as $nombre):
+                            $est = estiloTipoReceta($nombre); ?>
+                            <label class="block">
+                                <input type="radio" name="tipo_comida_manual" value="<?= e($nombre) ?>" class="peer sr-only" <?= $tipoBuscado === $nombre ? 'checked' : '' ?>>
+                                <span class="k-choice"><span aria-hidden="true"><?= $est['emoji'] ?></span><?= e($nombre) ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </fieldset>
+            <?php endif; ?>
+
+            <div>
+                <label for="sugerencia_ia" class="k-label">¿Te apetece algo en concreto? <span class="font-normal k-muted">(opcional)</span></label>
+                <textarea id="sugerencia_ia" name="sugerencia_ia" rows="3" maxlength="300" class="k-input" placeholder="Ej. algo con pollo y un poco picante"><?= e($_POST['sugerencia_ia'] ?? '') ?></textarea>
             </div>
 
-            <form id="formGeneradorIA" method="POST" class="space-y-8">
-                <?= campoCsrf() ?>
-                <!-- Inputs ocultos para mantener el contexto del calendario si existe -->
-                <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
-                <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
+            <fieldset>
+                <legend class="k-label">Ingredientes</legend>
+                <div class="space-y-2">
+                    <?php $modo = $_POST['modo_generacion'] ?? 'flexible'; ?>
+                    <label class="block">
+                        <input type="radio" name="modo_generacion" value="flexible" class="peer sr-only" <?= $modo !== 'estricto' ? 'checked' : '' ?>>
+                        <span class="k-choice"><?= icono('cart', 'h-4 w-4 shrink-0') ?><span><span class="block k-strong">Lo que haga falta</span><span class="block text-xs font-normal k-muted">Prioriza tu despensa y añade lo necesario</span></span></span>
+                    </label>
+                    <label class="block">
+                        <input type="radio" name="modo_generacion" value="estricto" class="peer sr-only" <?= $modo === 'estricto' ? 'checked' : '' ?>>
+                        <span class="k-choice"><?= icono('package', 'h-4 w-4 shrink-0') ?><span><span class="block k-strong">Solo mi despensa</span><span class="block text-xs font-normal k-muted">Sin comprar nada</span></span></span>
+                    </label>
+                </div>
+            </fieldset>
 
-                <!-- SELECTOR DE MOMENTO: Solo aparece si el usuario entró libremente (no desde el calendario) -->
-                <?php if (!$momentoUrl): ?>
-                    <div class="animate-fade-in">
-                        <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 ml-2">¿Qué quieres cocinar?</h3>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <?php 
-                            $opciones = ['Desayuno' => '🍳', 'Almuerzo' => '🍱', 'Snack' => '🥪', 'Cena' => '🌙'];
-                            foreach ($opciones as $nombre => $emoji): ?>
-                                <label class="cursor-pointer group">
-                                    <input type="radio" name="tipo_comida_manual" value="<?= e($nombre) ?>" class="hidden peer" <?= ($tipoBuscado === $nombre) ? 'checked' : '' ?>>
-                                    <div class="p-4 bg-gray-50 border-2 border-transparent rounded-2xl text-center transition-all peer-checked:bg-teal-50 peer-checked:border-teal-500 group-hover:bg-gray-100">
-                                        <span class="block text-xl mb-1"><?= $emoji ?></span>
-                                        <span class="block text-[10px] font-black uppercase text-gray-500 peer-checked:text-teal-700"><?= $nombre ?></span>
-                                    </div>
-                                </label>
+            <button type="submit" name="generar" class="k-btn k-btn-primary k-btn-lg w-full"><?= icono('sparkles') ?><?= $receta ? 'Generar otra' : 'Generar receta' ?></button>
+        </form>
+
+        <div class="space-y-6 lg:col-span-3">
+            <?php if ($receta): ?>
+                <!-- RECETA GENERADA -->
+                <section class="k-card overflow-hidden">
+                    <div class="k-card-pad">
+                        <p class="k-eyebrow flex items-center gap-1.5"><?= icono('sparkles', 'h-3.5 w-3.5') ?>Propuesta de KaloAI</p>
+                        <h2 class="k-title mt-1 text-xl sm:text-2xl"><?= e($receta['titulo']) ?></h2>
+                        <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                            <div class="k-macro-chip k-subtle"><p class="k-stat-label">Calorías</p><p class="font-display text-lg font-bold k-strong"><?= e(round((float) $receta['calorias'])) ?><span class="k-stat-unit">kcal</span></p></div>
+                            <?php foreach ([['k-macro-p', 'Proteína', 'proteinas'], ['k-macro-c', 'Carbohidratos', 'carbohidratos'], ['k-macro-f', 'Grasa', 'grasas']] as [$clase, $etiqueta, $clave]): ?>
+                                <div class="k-macro-chip <?= $clase ?>"><p class="k-stat-label"><?= $etiqueta ?></p><p class="font-display text-lg font-bold k-strong"><?= e(round((float) $receta['macros'][$clave])) ?><span class="k-stat-unit">g</span></p></div>
                             <?php endforeach; ?>
                         </div>
                     </div>
-                    <div class="h-px bg-gray-100 w-full my-6"></div>
-                <?php endif; ?>
 
-                <!-- CAMPO DE TEXTO: Sugerencia abierta para la IA (Prompt Engineering) -->
-                <div class="animate-fade-in">
-                    <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 ml-2">¿Algún antojo o idea especial? (Opcional)</h3>
-                    <div class="relative group">
-                        <textarea 
-                            name="sugerencia_ia" 
-                            placeholder="Ej: 'Quiero algo con pollo y muy picante' o 'Hazme una lasaña saludable'..."
-                            class="w-full bg-gray-50 border-2 border-gray-100 rounded-3xl p-5 text-sm font-bold text-gray-700 focus:bg-white focus:border-teal-500 focus:ring-0 transition-all resize-none outline-none group-hover:border-gray-200"
-                            rows="3"
-                        ></textarea>
-                        <div class="absolute right-4 bottom-4 text-xs font-black text-teal-600/30 group-focus-within:text-teal-500 transition-colors uppercase italic tracking-tighter">
-                            Opcional
-                        </div>
-                    </div>
-                </div>
-
-                <!-- MODOS DE GENERACIÓN: Controla si la IA usa solo el stock actual o es libre -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <label class="relative cursor-pointer group">
-                        <input type="radio" name="modo_generacion" value="estricto" class="hidden peer">
-                        <div class="p-6 bg-gray-50 border-2 border-transparent rounded-[2rem] transition-all peer-checked:bg-white peer-checked:border-teal-500 peer-checked:shadow-lg">
-                            <div class="flex items-center gap-3 mb-1">
-                                <span class="text-lg">🏠</span>
-                                <span class="font-black text-gray-900 italic text-sm tracking-tight">Solo mi Inventario</span>
-                            </div>
-                            <span class="block text-[10px] text-gray-400 font-bold uppercase ml-7">Usa lo que ya tienes</span>
-                        </div>
-                    </label>
-
-                    <label class="relative cursor-pointer group">
-                        <input type="radio" name="modo_generacion" value="flexible" class="hidden peer" checked>
-                        <div class="p-6 bg-gray-50 border-2 border-transparent rounded-[2rem] transition-all peer-checked:bg-white peer-checked:border-teal-500 peer-checked:shadow-lg">
-                            <div class="flex items-center gap-3 mb-1">
-                                <span class="text-lg">🛒</span>
-                                <span class="font-black text-gray-900 italic text-sm tracking-tight">Lo que quieras</span>
-                            </div>
-                            <span class="block text-[10px] text-gray-400 font-bold uppercase ml-7">Sugerir ingredientes externos</span>
-                        </div>
-                    </label>
-                </div>
-
-                <button type="submit" name="generar" class="w-full bg-teal-600 text-white font-black py-5 rounded-3xl shadow-xl shadow-teal-100 hover:bg-teal-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-4 text-sm uppercase tracking-[0.2em]">
-                    <span>✨</span> Generar Receta con IA
-                </button>
-            </form>
-        </section>
-
-        <!-- MODOS DE GENERACIÓN: Controla si la IA usa solo el stock actual o es libre -->
-        <?php if ($receta): ?>
-            <!-- Bloque de visualización de la receta generada -->
-            <section class="animate-fade-in bg-white rounded-[2.5rem] shadow-xl border-2 border-teal-500/20 overflow-hidden">
-                <div class="bg-teal-600 p-8 text-white relative">
-                    <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div class="grid gap-6 border-t p-5 sm:p-6 md:grid-cols-2" style="border-color: var(--k-border);">
                         <div>
-                            <p class="text-[10px] font-black uppercase tracking-[0.3em] opacity-80 mb-2">Sugerencia Inteligente</p>
-                            <h2 class="text-4xl font-black italic tracking-tighter"><?= htmlspecialchars($receta['titulo']) ?></h2>
+                            <h3 class="text-sm font-semibold k-strong">Ingredientes <span class="font-normal k-muted">· 1 ración</span></h3>
+                            <ul class="mt-3 space-y-2 text-sm">
+                                <?php foreach ($receta['ingredientes_usados'] as $ing): ?>
+                                    <li class="flex justify-between gap-3"><span><?= e($ing['nombre']) ?></span><span class="shrink-0 tabular-nums k-muted"><?= e($ing['cantidad']) ?> <?= e($ing['unidad'] ?? '') ?></span></li>
+                                <?php endforeach; ?>
+                            </ul>
                         </div>
-                        <!-- Macros calculados por la IA -->
-                        <div class="flex gap-4">
-                            <div class="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
-                                <span class="block text-[9px] font-black uppercase opacity-60">Kcal</span>
-                                <span class="text-xl font-black"><?= e(round((float) $receta['calorias'])) ?></span>
-                            </div>
-                            <div class="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
-                                <span class="block text-[9px] font-black uppercase opacity-60">Proteína</span>
-                                <span class="text-xl font-black"><?= e(round((float) $receta['macros']['proteinas'])) ?>g</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Detalle de la Receta -->
-                <div class="p-8 md:p-12 grid grid-cols-1 md:grid-cols-2 gap-12">
-                    <!-- Columna: Ingredientes -->
-                    <div>
-                        <h3 class="text-xs font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <span class="w-2 h-2 bg-teal-500 rounded-full"></span> Ingredientes
-                        </h3>
-                        <div class="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                            <p class="text-xs text-blue-800">
-                                💡 <b>Nota de KaloAI:</b> Esta receta está calculada para <b>1 ración</b> para cumplir tus macros. 
-                                Si cocinas para más personas, multiplica las cantidades.
-                            </p>
-                        </div>
-                        <div class="space-y-2">
-                            <?php foreach ($receta['ingredientes_usados'] as $ing): ?>
-                                <div class="p-4 bg-gray-50 rounded-2xl text-sm border border-gray-100 flex justify-between">
-                                    <span class="text-gray-500 font-bold italic"><?= htmlspecialchars($ing['nombre']) ?></span>
-                                    <span class="font-black text-gray-800 tracking-tighter"><?= e($ing['cantidad']) ?> <?= e($ing['unidad'] ?? '') ?></span>
-                                </div>
-                            <?php endforeach; ?>
+                        <div>
+                            <h3 class="text-sm font-semibold k-strong">Preparación</h3>
+                            <ol class="mt-3 space-y-3 text-sm">
+                                <?php foreach ($receta['instrucciones'] as $i => $paso): ?>
+                                    <li class="flex gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-semibold" style="background-color: var(--k-brand-soft); color: var(--k-brand-text);"><?= $i + 1 ?></span><span class="pt-0.5 leading-relaxed"><?= e($paso) ?></span></li>
+                                <?php endforeach; ?>
+                            </ol>
                         </div>
                     </div>
 
-                    <!-- Columna: Pasos de Preparación -->
-                    <div>
-                        <h3 class="text-xs font-black text-gray-800 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <span class="w-2 h-2 bg-orange-400 rounded-full"></span> Preparación
-                        </h3>
-                        <div class="space-y-6">
-                            <?php foreach ($receta['instrucciones'] as $i => $paso): ?>
-                                <div class="flex gap-4 group">
-                                    <span class="flex-shrink-0 w-8 h-8 bg-teal-50 text-teal-600 rounded-full flex items-center justify-center text-xs font-black shadow-sm group-hover:bg-teal-600 group-hover:text-white transition-all"><?= $i+1 ?></span>
-                                    <p class="text-sm text-gray-600 leading-relaxed font-bold italic pt-1"><?= htmlspecialchars($paso) ?></p>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Formulario de Guardado: Envía el JSON de la IA a la base de datos -->
-                <div class="p-8 bg-gray-50 border-t border-gray-100">
                     <!-- La receta está guardada en la sesión del servidor; aquí solo se confirma -->
-                    <form method="POST" action="guardar_receta_ia.php">
+                    <form method="POST" action="guardar_receta_ia.php" class="k-subtle flex flex-col gap-3 border-t p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6" style="border-color: var(--k-border);">
                         <?= campoCsrf() ?>
-                        <button type="submit" name="save_recipe" class="w-full bg-gray-900 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-widest">
-                            💾 <?= ($diaUrl) ? 'Guardar y añadir al Plan' : 'Guardar en Mis Recetas' ?>
-                        </button>
+                        <p class="text-sm k-muted">¿No te convence? Genera otra con el formulario.</p>
+                        <button type="submit" name="save_recipe" class="k-btn k-btn-primary"><?= icono('check') ?><?= $diaUrl ? 'Guardar y añadir al plan' : 'Guardar en mis recetas' ?></button>
                     </form>
-                </div>
-            </section>
-        <?php endif; ?>
-
-        <!-- SECCIÓN 3: Biblioteca Rápida (Permite reusar recetas existentes en lugar de generar) -->
-        <section class="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
-            <h2 class="text-xs font-black text-gray-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-2">
-                <span class="w-2 h-2 bg-gray-200 rounded-full"></span>
-                Tus <?= e($tipoBuscado) ?>s Guardados
-            </h2>
-            
-            <?php if (empty($misRecetas)): ?>
-                <div class="text-center py-12 bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
-                    <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">No hay recetas de este tipo guardadas</p>
-                </div>
+                </section>
             <?php else: ?>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                    <?php foreach ($misRecetas as $r): ?>
-                        <div class="p-5 bg-white border border-gray-100 rounded-[1.5rem] hover:border-teal-500 hover:shadow-lg hover:shadow-teal-50 transition-all flex justify-between items-center group">
-                            <div>
-                                <h4 class="font-black text-gray-800 text-sm italic mb-1 tracking-tight"><?= htmlspecialchars($r['titulo']) ?></h4>
-                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
-                                    <span class="text-teal-600 font-black italic">🔥 <?= (int) $r['calorias_por_racion'] ?> kcal</span> • 💪 <?= e(round((float) $r['proteinas_g_por_racion'])) ?>g Proteína
-                                </p>
-                            </div>
-                            <?php if($diaUrl): ?>
-                                <form method="POST">
-                                    <?= campoCsrf() ?>
-                                    <input type="hidden" name="id_receta_seleccionada" value="<?= (int) $r['id_receta'] ?>">
-                                    <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
-                                    <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
-                                    <button type="submit" name="seleccionar_existente" class="bg-gray-50 text-gray-400 group-hover:bg-teal-600 group-hover:text-white p-3 rounded-xl transition-all shadow-sm">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
-                                    </button>
-                                </form>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
+                <div class="k-empty">
+                    <span class="k-empty-icon"><?= icono('sparkles') ?></span>
+                    <p class="font-medium k-strong">Tu receta aparecerá aquí</p>
+                    <p class="mt-1 max-w-sm text-sm k-muted">Elige las opciones y pulsa «Generar receta». Tarda unos segundos.</p>
                 </div>
             <?php endif; ?>
-        </section>
 
-        <div class="mt-16 text-center">
-            <a href="../dashboard.php" class="inline-flex items-center font-black text-xs uppercase tracking-[0.2em] text-gray-400 hover:text-teal-600 transition-colors">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
-                Volver al Panel
-            </a>
+            <?php if ($diaUrl): ?>
+                <!-- O USAR UNA RECETA YA GUARDADA -->
+                <section class="k-card">
+                    <div class="k-card-head">
+                        <div>
+                            <h2 class="k-section-title">O usa una de tus recetas</h2>
+                            <p class="text-sm k-muted"><?= e($tipoBuscado) ?> guardados</p>
+                        </div>
+                    </div>
+                    <?php if (empty($misRecetas)): ?>
+                        <p class="px-6 py-5 text-sm k-muted">Aún no tienes recetas de este tipo.</p>
+                    <?php else: ?>
+                        <ul class="k-list custom-scrollbar max-h-80 overflow-y-auto">
+                            <?php foreach ($misRecetas as $r): ?>
+                                <li class="flex items-center justify-between gap-4 px-5 py-3 sm:px-6">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-medium k-strong"><?= e($r['titulo']) ?></p>
+                                        <p class="text-xs tabular-nums k-muted"><?= (int) $r['calorias_por_racion'] ?> kcal · <?= e(round((float) $r['proteinas_g_por_racion'])) ?> g proteína</p>
+                                    </div>
+                                    <form method="POST" class="m-0 shrink-0">
+                                        <?= campoCsrf() ?>
+                                        <input type="hidden" name="id_receta_seleccionada" value="<?= (int) $r['id_receta'] ?>">
+                                        <input type="hidden" name="dia_contexto" value="<?= e($diaUrl) ?>">
+                                        <input type="hidden" name="momento_contexto" value="<?= e($momentoUrl) ?>">
+                                        <button type="submit" name="seleccionar_existente" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>Usar</button>
+                                    </form>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+                </section>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
-
-<!-- OVERLAY DE CARGA: Feedback visual mientras la IA procesa el Prompt (Llamada a la API) -->
-<div id="loadingOverlay" class="fixed inset-0 bg-white/90 backdrop-blur-md z-[100] hidden flex flex-col items-center justify-center">
-    <div class="relative w-20 h-20 mb-8">
-        <div class="absolute inset-0 border-4 border-teal-50 rounded-full"></div>
-        <div class="absolute inset-0 border-4 border-teal-500 rounded-full border-t-transparent animate-spin"></div>
+<!-- PANTALLA DE ESPERA MIENTRAS RESPONDE LA IA -->
+<div id="loadingOverlay" class="k-modal" hidden aria-live="polite">
+    <div class="k-modal-backdrop"></div>
+    <div class="k-modal-panel max-w-xs text-center">
+        <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-teal-500/20 border-t-teal-500"></div>
+        <p class="font-medium k-strong">Creando tu receta…</p>
+        <p id="loadingMessage" class="mt-1 text-sm k-muted">Revisando tu despensa…</p>
     </div>
-    <h3 class="text-sm font-black text-gray-900 uppercase tracking-[0.3em] animate-pulse">KaloAI está pensando...</h3>
-    <p id="loadingMessage" class="mt-4 text-[9px] font-bold text-teal-600 uppercase tracking-widest opacity-60"></p>
 </div>
 
-<?php 
-// Incluir el pie de página
-include_once __DIR__ . '/../templates/footer.php'; 
-?>
+<?php include_once __DIR__ . '/../templates/footer.php'; ?>

@@ -172,7 +172,8 @@ function generarRecetaInteligente($userId, $soloInventario = false, $dia = null,
     $stmt->execute([$userId]);
     $inventario = $stmt->fetchAll();
 
-    $stmt = $pdo->prepare("SELECT tdee_calorias FROM perfil WHERE id_usuario = ?");
+    // Las calorías del objetivo (con el déficit o superávit), no las de mantenimiento
+    $stmt = $pdo->prepare("SELECT COALESCE(calorias_netas_objetivo, tdee_calorias) FROM perfil WHERE id_usuario = ?");
     $stmt->execute([$userId]);
     $metaKcalDiaria = (int) ($stmt->fetchColumn() ?: 2000);
 

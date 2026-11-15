@@ -1,11 +1,23 @@
 <?php
 /**
- * PLANTILLA: PIE DE PÁGINA (FOOTER) - KaloAI
- * Este archivo cierra las etiquetas principales del DOM, gestiona la
- * navegación global secundaria y carga los recursos de JavaScript.
+ * PLANTILLA: PIE DE PÁGINA - KaloAI
+ * Cierra <main>, pinta el pie (discreto en la aplicación, completo en las
+ * páginas públicas) y carga el JavaScript.
+ * $modoApp viene de header.php.
  */
 ?>
 </main>
+<?php if (!empty($modoApp)): ?>
+<footer class="mt-10 border-t" style="border-color: var(--k-border);">
+    <div class="k-container flex flex-col items-center justify-between gap-2 py-6 text-xs sm:flex-row k-muted">
+        <p>&copy; <?= date('Y') ?> KaloAI · Planificación alimentaria con IA</p>
+        <nav class="flex gap-4">
+            <a href="<?= BASE_URL ?>public/contacto.php" class="hover:underline">Contacto</a>
+            <a href="<?= BASE_URL ?>public/privacidad.php" class="hover:underline">Privacidad</a>
+        </nav>
+    </div>
+</footer>
+<?php else: ?>
 <footer class="relative overflow-hidden bg-gray-950 text-gray-400">
     <!-- Detalle de marca: filo teal arriba y un resplandor muy suave -->
     <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-500/70 to-transparent" aria-hidden="true"></div>
@@ -48,18 +60,18 @@
             </p>
         </div>
     </div>
-
-    <!-- CARGA DE SCRIPTS: Funcionalidades core y librería de gráficos -->
-    <script src="<?php echo BASE_URL; ?>public/js/main.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        // En modo oscuro, los textos y las líneas de los gráficos en tonos claros
-        if (window.Chart && document.documentElement.classList.contains('dark')) {
-            Chart.defaults.color = '#aab6b4';
-            Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
-        }
-    </script>
-
 </footer>
+<?php endif; ?>
+
+<!-- JavaScript de la web y librería de gráficos -->
+<script src="<?= BASE_URL ?>public/js/main.js?v=<?= @filemtime(__DIR__ . '/../../public/js/main.js') ?>"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // En modo oscuro, los textos y las líneas de los gráficos en tonos claros
+    if (window.Chart && document.documentElement.classList.contains('dark')) {
+        Chart.defaults.color = '#aab6b4';
+        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
+    }
+</script>
 </body>
 </html>
