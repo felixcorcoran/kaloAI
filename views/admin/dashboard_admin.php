@@ -118,7 +118,8 @@ $avisos = [
                 </div>
                 <p class="text-right"><span class="k-stat-value"><?= array_sum(array_column($altas, 'total')) ?></span><span class="block text-xs k-muted">en total</span></p>
             </div>
-            <div class="relative mt-4 min-h-[14rem] flex-1"><canvas id="altasChart" class="absolute inset-0" aria-label="Gráfico de altas por mes"></canvas></div>
+            <div class="relative mt-4 min-h-[14rem] flex-1"><canvas id="altasChart" class="absolute inset-0" role="img" aria-label="Altas de usuarios por mes"></canvas></div>
+            <?= tablaDatos('Altas por mes', ['Mes', 'Altas'], array_map(fn($a) => [$a['etiqueta'], (string) $a['total']], array_values($altas))) ?>
         </section>
         <section class="k-card k-card-pad">
             <h2 class="k-section-title">Uso de KaloAI</h2>
@@ -276,4 +277,5 @@ $avisos = [
     window.adminData = <?= json_html(['etiquetas' => array_column(array_values($altas), 'etiqueta'), 'altas' => array_column(array_values($altas), 'total')]) ?>;
 </script>
 
+<?php $usaGraficas = true; // carga Chart.js (footer.php) ?>
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

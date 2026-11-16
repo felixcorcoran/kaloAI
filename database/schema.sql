@@ -11,8 +11,8 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
-DROP TABLE IF EXISTS migraciones, comida_planificada, detalle_receta, ingrediente_prohibido, inventario,
-    logs_actividad, mensaje_contacto, nota_paciente, perfil, plan_semanal, progreso, receta, registro_comida, restablecimiento_contrasena, rol, solicitudes_vinculacion, usuario;
+DROP TABLE IF EXISTS migraciones, comida_planificada, detalle_receta, ingrediente_prohibido, inventario, lista_compartida,
+    logs_actividad, mensaje_contacto, nota_paciente, perfil, plan_semanal, plantilla_comida, plantilla_semana, progreso, receta, registro_comida, restablecimiento_contrasena, rol, solicitudes_vinculacion, usuario;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -51,6 +51,9 @@ CREATE TABLE perfil (
   nivel_actividad ENUM('sedentario','ligero','moderado','activo','muy_activo') DEFAULT NULL,
   objetivo ENUM('perdida_rapida','perdida_moderada','perdida_grasa','mantenimiento','ganancia_muscular','recomposicion_corporal','rendimiento_deportivo') NOT NULL DEFAULT 'mantenimiento',
   comensales TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  resumen_semanal TINYINT(1) NOT NULL DEFAULT 0,
+  ultimo_resumen DATE DEFAULT NULL,
+  token_baja CHAR(32) DEFAULT NULL,
   tdee_calorias INT DEFAULT NULL,
   proteinas_objetivo_g INT DEFAULT NULL,
   carbohidratos_objetivo_g INT DEFAULT NULL,
@@ -59,6 +62,7 @@ CREATE TABLE perfil (
   fecha_actualizacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id_perfil),
   UNIQUE KEY id_usuario (id_usuario),
+  UNIQUE KEY uq_perfil_token_baja (token_baja),
   KEY fk_perfil_nutricionista (id_nutricionista),
   CONSTRAINT fk_perfil_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario) ON DELETE CASCADE,
   CONSTRAINT fk_perfil_nutricionista FOREIGN KEY (id_nutricionista) REFERENCES usuario (id_usuario) ON DELETE SET NULL
@@ -210,10 +214,12 @@ CREATE TABLE nota_paciente (
   id_nutricionista INT NOT NULL,
   id_paciente INT NOT NULL,
   texto TEXT NOT NULL,
+  de_paciente TINYINT(1) NOT NULL DEFAULT 0,
   leida TINYINT(1) NOT NULL DEFAULT 0,
   fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id_nota),
   KEY idx_nota_paciente (id_paciente, fecha),
+  KEY idx_nota_sin_leer (id_nutricionista, de_paciente, leida),
   KEY fk_nota_nutricionista (id_nutricionista),
   CONSTRAINT fk_nota_nutricionista FOREIGN KEY (id_nutricionista) REFERENCES usuario (id_usuario) ON DELETE CASCADE,
   CONSTRAINT fk_nota_paciente FOREIGN KEY (id_paciente) REFERENCES usuario (id_usuario) ON DELETE CASCADE
@@ -234,6 +240,42 @@ CREATE TABLE mensaje_contacto (
   CONSTRAINT fk_mensaje_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Plantillas de semana (migración 009)
+CREATE TABLE plantilla_semana (
+  id_plantilla INT NOT NULL AUTO_INCREMENT,
+  id_usuario INT NOT NULL,
+  nombre VARCHAR(60) NOT NULL,
+  fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_plantilla),
+  KEY fk_plantilla_usuario (id_usuario),
+  CONSTRAINT fk_plantilla_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE plantilla_comida (
+  id_plantilla_comida INT NOT NULL AUTO_INCREMENT,
+  id_plantilla INT NOT NULL,
+  id_receta INT NOT NULL,
+  dia_semana TINYINT UNSIGNED NOT NULL COMMENT '0 = lunes ... 6 = domingo',
+  momento_comida ENUM('Desayuno','Media Mañana','Almuerzo','Merienda','Cena') NOT NULL,
+  raciones DECIMAL(6,2) NOT NULL DEFAULT 1.00,
+  PRIMARY KEY (id_plantilla_comida),
+  UNIQUE KEY uq_plantilla_hueco (id_plantilla, dia_semana, momento_comida),
+  KEY fk_plantilla_receta (id_receta),
+  CONSTRAINT fk_plantilla_comida_plantilla FOREIGN KEY (id_plantilla) REFERENCES plantilla_semana (id_plantilla) ON DELETE CASCADE,
+  CONSTRAINT fk_plantilla_comida_receta FOREIGN KEY (id_receta) REFERENCES receta (id_receta) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Enlace de solo lectura a la lista de la compra (migración 011)
+CREATE TABLE lista_compartida (
+  id_usuario INT NOT NULL,
+  token CHAR(32) NOT NULL,
+  fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ultima_visita TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (id_usuario),
+  UNIQUE KEY uq_lista_token (token),
+  CONSTRAINT fk_lista_compartida_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Registro de migraciones (core/migraciones.php). Este esquema ya incluye los
 -- cambios de las que se listan aquí, así que se apuntan como aplicadas.
 CREATE TABLE migraciones (
@@ -250,4 +292,8 @@ INSERT INTO migraciones (nombre) VALUES
   ('005_restablecer_contrasena.sql'),
   ('006_favoritas_y_comensales.sql'),
   ('007_notas_del_nutricionista.sql'),
-  ('008_mensajes_de_contacto.sql');
+  ('008_mensajes_de_contacto.sql'),
+  ('009_plantillas_de_semana.sql'),
+  ('010_respuestas_a_las_notas.sql'),
+  ('011_lista_compartida.sql'),
+  ('012_resumen_semanal.sql');

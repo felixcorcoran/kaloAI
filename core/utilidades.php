@@ -324,3 +324,11 @@ function actualizarPesoYObjetivos(PDO $pdo, int $userId, float $pesoKg): void {
                        grasas_objetivo_g = ?, calorias_netas_objetivo = ? WHERE id_usuario = ?")
         ->execute([$pesoKg, $tdee, $macros['proteinas'], $macros['carbohidratos'], $macros['grasas'], $macros['calorias_netas'], $userId]);
 }
+
+/**
+ * Resumen semanal por correo: desde el lunes por la mañana, cada visita envía
+ * unos pocos pendientes cuando ya ha respondido (core/resumen_semanal.php).
+ * El resto de la semana solo lee un archivo pequeño.
+ */
+require_once __DIR__ . '/resumen_semanal.php';
+comprobarResumenSemanal();

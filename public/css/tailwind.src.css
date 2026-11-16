@@ -144,6 +144,8 @@
     .k-card-link:hover { border-color: var(--k-border-strong); background-color: color-mix(in srgb, var(--k-surface) 92%, var(--k-text)); }
     .k-divider { @apply border-t; border-color: var(--k-border); }
     .k-subtle { background-color: var(--k-surface-2); }
+    /* Mensaje propio en una conversación (notas con el nutricionista) */
+    .k-bubble-mia { background-color: var(--k-brand-soft); border: 1px solid var(--k-brand-line); }
     .k-link { @apply font-medium underline-offset-4 hover:underline; color: var(--k-brand-text); }
 
     /* ---------- Botones (píldora) ---------- */
@@ -266,6 +268,16 @@
     .k-table th { @apply px-5 py-3 text-xs font-medium sm:px-6; color: var(--k-muted); }
     .k-table td { @apply border-t px-5 py-3.5 sm:px-6; border-color: var(--k-border); }
     .k-table tbody tr:hover td { background-color: var(--k-surface-2); }
+
+    /* ---------- Datos de una gráfica, plegados (views/templates/tabla_datos.php) ---------- */
+    .k-datos { @apply mt-3 text-sm; }
+    .k-datos > summary { @apply inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-1 py-0.5 text-xs font-medium; color: var(--k-muted); }
+    .k-datos > summary::-webkit-details-marker { display: none; }
+    .k-datos > summary:hover, .k-datos[open] > summary { color: var(--k-text); }
+    .k-datos-cuerpo { @apply mt-2 max-h-64 overflow-auto rounded-xl border; border-color: var(--k-border); }
+    .k-datos-cuerpo .k-table th, .k-datos-cuerpo .k-table td { @apply px-3 py-2; }
+    .k-datos-cuerpo .k-table tbody th { @apply border-t; border-color: var(--k-border); }
+    .k-datos-cuerpo .k-table thead th { position: sticky; top: 0; background-color: var(--k-surface); }
     .k-list > * + * { @apply border-t; border-color: var(--k-border); }
 
     .k-empty { @apply flex flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-12 text-center; border-color: var(--k-border-strong); }

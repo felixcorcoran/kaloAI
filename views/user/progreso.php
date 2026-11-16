@@ -274,7 +274,7 @@ $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
         <section class="k-card k-card-pad lg:col-span-2">
             <div class="flex items-center justify-between"><h2 class="k-section-title">Evolución del peso</h2><?php if ($pesoInicial !== null): ?><span class="text-xs k-muted">Inicio <?= $coma($pesoInicial) ?> kg</span><?php endif; ?></div>
             <?php if (count($pesos) >= 2): ?>
-                <div id="chartContainer" class="relative mt-4 h-64"><canvas id="sparklineChart" class="absolute inset-0" aria-label="Gráfico de la evolución del peso"></canvas></div>
+                <div id="chartContainer" class="relative mt-4 h-64"><canvas id="sparklineChart" class="absolute inset-0" role="img" aria-label="Evolución del peso, de <?= e($coma($pesoInicial)) ?> a <?= e($coma($pesoActual)) ?> kg"></canvas></div>
             <?php else: ?>
                 <div class="k-empty mt-4 py-10">
                     <span class="k-empty-icon"><?= icono('activity') ?></span>
@@ -283,7 +283,12 @@ $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
             <?php endif; ?>
             <?php if (count($cinturas) >= 2): ?>
                 <h3 class="mt-8 text-sm font-semibold k-strong">Cintura</h3>
-                <div class="relative mt-3 h-40"><canvas id="cinturaChart" class="absolute inset-0" aria-label="Gráfico de la evolución de la cintura"></canvas></div>
+                <div class="relative mt-3 h-40"><canvas id="cinturaChart" class="absolute inset-0" role="img" aria-label="Evolución de la cintura, de <?= e($coma($cinturas[0])) ?> a <?= e($coma(end($cinturas))) ?> cm"></canvas></div>
+            <?php endif; ?>
+            <?php if (count($pesos) >= 2 || count($cinturas) >= 2): ?>
+                <?= tablaDatos('Mediciones por fecha', ['Fecha', 'Peso', 'Cintura'], array_map(
+                    fn($r) => [formatearFecha($r['fecha']), $r['peso_kg'] !== null ? $coma($r['peso_kg']) . ' kg' : '—', !empty($r['cintura_cm']) ? $coma($r['cintura_cm']) . ' cm' : '—'],
+                    array_reverse($progresoData))) ?>
             <?php endif; ?>
         </section>
 
@@ -362,4 +367,5 @@ $signo = fn($n) => ($n > 0 ? '+' : '') . number_format($n, 1, ',', '.');
     window.progresoData = <?= $jsProgresoData ?>;
 </script>
 
+<?php $usaGraficas = true; // carga Chart.js (footer.php) ?>
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

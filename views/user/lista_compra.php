@@ -28,26 +28,32 @@ $pdo = connectDB();
  * ==========================================================================
  */
 
-// 1. OBTENCIÓN DE DEMANDA: Extraer ingredientes de todas las recetas en el plan actual
-$sqlNecesario = "SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unidad 
-                 FROM comida_planificada cp
-                 JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
-                 JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                 WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?";
-
-$stmtNec = $pdo->prepare($sqlNecesario);
 // Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
 $semana = semanaValida($_GET['semana'] ?? null);
-$stmtNec->execute([$userId, $semana]);
-// Cada comida se cocina para toda la casa (perfil: «¿Para cuántas personas cocinas?»)
-$comensales = comensalesDe($pdo, (int) $userId);
-$necesariosRaw = multiplicarRaciones($stmtNec->fetchAll(), $comensales);
 
-// Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
-// sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.
-$stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
-$stmtInv->execute([$userId]);
-$listaCompra = calcularListaCompra($necesariosRaw, $stmtInv->fetchAll());
+// Compartir la lista con un enlace de solo lectura (o dejar de hacerlo)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['accion'] ?? '', ['compartir', 'dejar_de_compartir'], true)) {
+    if (!empty($_SESSION['is_impersonating'])) {
+        $_SESSION['aviso_lista'] = ['error', 'En modo gestión no se puede compartir la lista de tu paciente.'];
+    } elseif ($_POST['accion'] === 'compartir') {
+        crearListaCompartida($pdo, (int) $userId);
+        $_SESSION['aviso_lista'] = ['ok', 'Enlace listo. Cópialo y envíalo a quien vaya a hacer la compra.'];
+        $_SESSION['abrir_compartir'] = true;
+    } else {
+        dejarDeCompartirLista($pdo, (int) $userId);
+        $_SESSION['aviso_lista'] = ['ok', 'Has dejado de compartir la lista: el enlace ya no funciona.'];
+    }
+    header('Location: lista_compra.php' . ($semana !== lunesDe() ? '?semana=' . $semana : ''));
+    exit;
+}
+$tokenCompartida = tokenListaCompartida($pdo, (int) $userId);
+$urlCompartida = $tokenCompartida ? BASE_URL . 'public/lista.php?t=' . $tokenCompartida : null;
+$avisoLista = $_SESSION['aviso_lista'] ?? null;
+$abrirCompartir = !empty($_SESSION['abrir_compartir']);
+unset($_SESSION['aviso_lista'], $_SESSION['abrir_compartir']);
+// Lo que falta = lo que piden las recetas del plan (x raciones x personas de la
+// casa) - lo que hay en la despensa. La lógica está en core/recetas.php.
+['lista' => $listaCompra, 'necesarios' => $necesariosRaw, 'comensales' => $comensales] = listaCompraDeSemana($pdo, (int) $userId, $semana);
 
 // Resumen: cuántos ingredientes distintos pide el plan y cuántos cubre ya la despensa
 $ingredientesPlan = count(array_unique(array_map(fn($f) => claveProducto((string) $f['nombre_ingrediente']), $necesariosRaw)));
@@ -61,14 +67,7 @@ $comidasPlan = (int) $stmtCom->fetchColumn();
 include_once __DIR__ . '/../templates/header.php';
 ?>
 <?php
-// Cantidad legible: "1,5 kg" en vez de "1500 g", "3 unidades"
-$formatear = function (float $cantidad, string $unidad): string {
-    if ($unidad === 'g' && $cantidad >= 1000) { $cantidad /= 1000; $unidad = 'kg'; }
-    if ($unidad === 'ml' && $cantidad >= 1000) { $cantidad /= 1000; $unidad = 'L'; }
-    if ($unidad === 'unidad') $unidad = $cantidad == 1 ? 'unidad' : 'unidades';
-    $numero = rtrim(rtrim(number_format($cantidad, 2, ',', '.'), '0'), ',');
-    return $numero . ' ' . $unidad;
-};
+$formatear = 'formatearCantidad';
 ?>
 
 <div class="k-container k-page">
@@ -85,11 +84,16 @@ $formatear = function (float $cantidad, string $unidad): string {
                     <a href="lista_compra.php<?= $opcion !== lunesDe() ? '?semana=' . $opcion : '' ?>" <?= $opcion === $semana ? 'aria-current="page"' : '' ?>><?= e(nombreSemana($opcion)) ?></a>
                 <?php endforeach; ?>
             </div>
+            <button type="button" onclick="abrirModal('modalCompartir')" class="k-btn k-btn-secondary"><?= icono('share') ?><?= $tokenCompartida ? 'Compartida' : 'Compartir' ?></button>
             <?php if (!empty($listaCompra)): ?>
                 <a href="descargar_lista.php<?= $semana !== lunesDe() ? '?semana=' . $semana : '' ?>" class="k-btn k-btn-secondary"><?= icono('download') ?>Descargar PDF</a>
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($avisoLista): [$tipoAviso, $textoAviso] = $avisoLista; ?>
+        <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mb-6" role="status"><?= icono($tipoAviso === 'ok' ? 'check' : 'alert') ?><p><?= e($textoAviso) ?></p></div>
+    <?php endif; ?>
 
     <?php if (isset($_GET['success'])): ?>
         <div class="k-alert k-alert-ok mb-6"><?= icono('check') ?><p>Añadido a tu despensa.</p></div>
@@ -188,5 +192,44 @@ $formatear = function (float $cantidad, string $unidad): string {
         </div>
     <?php endif; ?>
 </div>
+
+<!-- MODAL: COMPARTIR LA LISTA -->
+<div id="modalCompartir" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloCompartir">
+    <div class="k-modal-backdrop"></div>
+    <div class="k-modal-panel">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloCompartir" class="k-modal-title">Compartir la lista de la compra</h2>
+        <p class="mt-1 text-sm k-muted">Quien tenga el enlace ve tu lista de esta semana y de la siguiente, sin iniciar sesión. No ve nada más de tu cuenta y no puede cambiar nada.</p>
+        <?php if ($urlCompartida): ?>
+            <label for="enlaceCompartida" class="k-label mt-5">Enlace</label>
+            <div class="flex flex-col gap-2 sm:flex-row">
+                <input id="enlaceCompartida" type="text" readonly value="<?= e($urlCompartida) ?>" class="k-input font-mono text-xs" onclick="this.select()">
+                <button type="button" class="k-btn k-btn-primary shrink-0" data-copiar="#enlaceCompartida" data-autofocus><?= icono('link') ?><span>Copiar</span></button>
+            </div>
+            <p class="k-hint" id="avisoCopiado" aria-live="polite"></p>
+            <div class="mt-6 flex flex-wrap justify-end gap-2">
+                <form method="POST" action="lista_compra.php<?= $semana !== lunesDe() ? '?semana=' . $semana : '' ?>" class="m-0">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="accion" value="compartir">
+                    <button type="submit" class="k-btn k-btn-ghost" title="El enlace actual dejará de funcionar" onclick="return confirm('El enlace actual dejará de funcionar. ¿Crear uno nuevo?')">Crear otro enlace</button>
+                </form>
+                <form method="POST" action="lista_compra.php<?= $semana !== lunesDe() ? '?semana=' . $semana : '' ?>" class="m-0">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="accion" value="dejar_de_compartir">
+                    <button type="submit" class="k-btn k-btn-danger">Dejar de compartir</button>
+                </form>
+            </div>
+        <?php else: ?>
+            <form method="POST" action="lista_compra.php<?= $semana !== lunesDe() ? '?semana=' . $semana : '' ?>" class="mt-6 flex justify-end gap-2">
+                <?= campoCsrf() ?>
+                <input type="hidden" name="accion" value="compartir">
+                <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+                <button type="submit" class="k-btn k-btn-primary"><?= icono('link') ?>Crear enlace</button>
+            </form>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php if ($abrirCompartir): ?><script>document.addEventListener('DOMContentLoaded', () => abrirModal('modalCompartir'));</script><?php endif; ?>
 
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

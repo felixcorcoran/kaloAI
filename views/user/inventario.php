@@ -10,6 +10,7 @@ $pageTitle = "KaloAI | Inventario Doméstico";
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php'; 
+require_once __DIR__ . '/../../core/tique.php';
 
 // 1. SEGURIDAD: Verificación de sesión activa
 if (!isset($_SESSION['user_id'])) {
@@ -230,7 +231,10 @@ include_once __DIR__ . '/../templates/header.php';
             <h1 class="k-title mt-3">Despensa</h1>
             <p class="k-subtitle">Lo que ya tienes en casa. La lista de la compra lo descuenta, y la IA lo usa al crear recetas.</p>
         </div>
-        <button type="button" onclick="abrirModalInventario('add')" class="k-btn k-btn-primary"><?= icono('plus') ?>Añadir ingrediente</button>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="abrirModal('modalTique')" class="k-btn k-btn-secondary"><?= icono('camera') ?>Foto del tique</button>
+            <button type="button" onclick="abrirModalInventario('add')" class="k-btn k-btn-primary"><?= icono('plus') ?>Añadir ingrediente</button>
+        </div>
     </div>
 
     <?php if ($message): ?>
@@ -394,5 +398,66 @@ include_once __DIR__ . '/../templates/header.php';
         </div>
     </div>
 </div>
+
+<!-- MODAL: AÑADIR DESDE UNA FOTO DEL TIQUE -->
+<div id="modalTique" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloTique">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="tique.php" enctype="multipart/form-data" class="k-modal-panel max-w-md" data-espera="esperaTique" id="formTique">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="accion" value="leer">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloTique" class="k-modal-title">Añadir desde el tique</h2>
+        <p class="mt-1 text-sm k-muted">Haz una foto al tique de la compra: la IA saca los productos y sus cantidades, y tú los revisas antes de guardarlos.</p>
+        <label for="fotoTique" class="k-label mt-5">Foto del tique</label>
+        <input id="fotoTique" name="foto" type="file" accept="image/*" capture="environment" required class="k-input">
+        <p class="k-hint">Entero, plano y con buena luz. La foto no se guarda: solo se usa para leerla.</p>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Leer el tique</button>
+        </div>
+    </form>
+</div>
+
+<div id="esperaTique" class="k-modal" hidden aria-live="polite">
+    <div class="k-modal-backdrop"></div>
+    <div class="k-modal-panel max-w-xs text-center">
+        <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-teal-500/20 border-t-teal-500"></div>
+        <p class="font-medium k-strong">Leyendo el tique…</p>
+        <p class="mt-1 text-sm k-muted">Suele tardar unos segundos.</p>
+    </div>
+</div>
+
+<script>
+    // Antes de subirla, la foto se reduce (lado mayor de 1600 px, JPEG): con el
+    // móvil y mala cobertura se sube en un momento, y la IA la lee igual de bien.
+    (() => {
+        const campo = document.getElementById('fotoTique');
+        if (!campo) return;
+        const MAXIMO = <?= TIQUE_MAX_BYTES ?>;
+        const comprobarTamano = () => campo.setCustomValidity(campo.files[0] && campo.files[0].size > MAXIMO
+            ? 'La foto pesa demasiado (máximo <?= TIQUE_MAX_BYTES / 1024 / 1024 ?> MB). Haz otra con menos resolución.' : '');
+        campo.addEventListener('change', async () => {
+            campo.setCustomValidity('');
+            const original = campo.files[0];
+            if (!original || !original.type.startsWith('image/') || original.size < 400 * 1024) { comprobarTamano(); return; }
+            try {
+                if (!window.DataTransfer || !window.createImageBitmap) throw new Error('sin soporte');
+                const imagen = await createImageBitmap(original);
+                const escala = Math.min(1, 1600 / Math.max(imagen.width, imagen.height));
+                const lienzo = document.createElement('canvas');
+                lienzo.width = Math.round(imagen.width * escala);
+                lienzo.height = Math.round(imagen.height * escala);
+                lienzo.getContext('2d').drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+                const reducida = await new Promise(ok => lienzo.toBlob(ok, 'image/jpeg', 0.85));
+                if (reducida && reducida.size < original.size) {
+                    const datos = new DataTransfer();
+                    datos.items.add(new File([reducida], 'tique.jpg', { type: 'image/jpeg' }));
+                    campo.files = datos.files;
+                }
+            } catch (e) { /* si no se puede (p. ej. HEIC en algunos navegadores), se sube la original */ }
+            comprobarTamano();
+        });
+    })();
+</script>
 
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

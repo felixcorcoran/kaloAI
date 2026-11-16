@@ -18,7 +18,8 @@ function exportarDatosCuenta(PDO $pdo, int $userId): array {
 
     $cuenta = $filas("SELECT u.correo, r.nombre AS rol, u.fecha_creacion FROM usuario u JOIN rol r ON r.id_rol = u.id_rol WHERE u.id_usuario = ?", [$userId]);
     $perfil = $filas("SELECT nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias,
-                             calorias_netas_objetivo, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, comensales
+                             calorias_netas_objetivo, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, comensales,
+                             resumen_semanal
                       FROM perfil WHERE id_usuario = ?", [$userId]);
 
     $recetas = $filas("SELECT id_receta, titulo, tipo_comida, descripcion, calorias_por_racion, proteinas_g_por_racion,
@@ -43,6 +44,14 @@ function exportarDatosCuenta(PDO $pdo, int $userId): array {
                                                'momento' => $c['momento_comida'], 'receta' => $c['titulo'], 'raciones' => (float) $c['raciones']];
     }
 
+    $plantillas = [];
+    foreach ($filas("SELECT p.nombre, pc.dia_semana, pc.momento_comida, pc.raciones, r.titulo
+                     FROM plantilla_semana p JOIN plantilla_comida pc ON pc.id_plantilla = p.id_plantilla JOIN receta r ON r.id_receta = pc.id_receta
+                     WHERE p.id_usuario = ? ORDER BY p.nombre, pc.dia_semana", [$userId]) as $c) {
+        $plantillas[$c['nombre']][] = ['dia' => DIAS_SEMANA[(int) $c['dia_semana']] ?? $c['dia_semana'],
+                                       'momento' => $c['momento_comida'], 'receta' => $c['titulo'], 'raciones' => (float) $c['raciones']];
+    }
+
     return [
         'exportado' => date('c'),
         'aplicacion' => 'KaloAI',
@@ -54,6 +63,9 @@ function exportarDatosCuenta(PDO $pdo, int $userId): array {
         'planes_semanales' => $planes,
         'comidas_registradas' => $filas("SELECT fecha, momento_comida, descripcion, raciones, calorias, proteinas_g, carbohidratos_g, grasas_g
                                          FROM registro_comida WHERE id_usuario = ? ORDER BY fecha, id_registro", [$userId]),
+        'plantillas_de_semana' => $plantillas,
+        'mensajes_con_el_nutricionista' => array_map(fn($m) => ['fecha' => $m['fecha'], 'de' => $m['de_paciente'] ? 'yo' : 'nutricionista', 'texto' => $m['texto']],
+            $filas("SELECT fecha, de_paciente, texto FROM nota_paciente WHERE id_paciente = ? ORDER BY fecha, id_nota", [$userId])),
         'despensa' => $filas("SELECT nombre_ingrediente, cantidad, unidad, fecha_actualizacion FROM inventario WHERE id_usuario = ? ORDER BY nombre_ingrediente", [$userId]),
     ];
 }

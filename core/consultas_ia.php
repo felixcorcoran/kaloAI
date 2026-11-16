@@ -12,18 +12,26 @@ require_once __DIR__ . '/configuracion.php';
  * - Si hay varias claves configuradas, se prueba la siguiente solo cuando una
  *   no es válida (revocada o sin permiso). Un límite de uso (HTTP 429) no se
  *   esquiva con otra clave: se informa a la persona para que lo intente luego.
+ *
+ * @param array|null $imagen ['mime' => 'image/jpeg', 'datos' => base64] para preguntar sobre una foto
  */
-function preguntarGemini(string $prompt, int $segundos = 45): ?string {
+function preguntarGemini(string $prompt, int $segundos = 45, ?array $imagen = null): ?string {
     $claves = defined('GEMINI_API_KEYS') ? array_filter((array) GEMINI_API_KEYS) : [];
     if (!$claves) {
         error_log("KaloAI: no hay ninguna clave de Gemini configurada (GEMINI_API_KEY)");
         return null;
     }
 
+    // Con imagen (p. ej. la foto de un tique), va delante del texto; y como se
+    // trata de leer, no de inventar, con menos «creatividad»
+    $partes = [["text" => $prompt]];
+    if ($imagen !== null) {
+        array_unshift($partes, ["inline_data" => ["mime_type" => $imagen['mime'], "data" => $imagen['datos']]]);
+    }
     $cuerpo = json_encode([
-        "contents" => [["parts" => [["text" => $prompt]]]],
+        "contents" => [["parts" => $partes]],
         "generationConfig" => [
-            "temperature" => 0.7,
+            "temperature" => $imagen !== null ? 0.2 : 0.7,
             "response_mime_type" => "application/json",
         ],
     ]);

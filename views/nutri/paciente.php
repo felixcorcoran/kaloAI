@@ -41,7 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $d = datosSeguimiento($pdo, $pacienteId);
-$notas = notasDelPaciente($pdo, $pacienteId);
+$notas = notasDelPaciente($pdo, $pacienteId, 50);
+$respuestasNuevas = count(array_filter($notas, fn($n) => $n['de_paciente'] && !$n['leida'] && (int) $n['id_nutricionista'] === $nutriId));
+marcarRespuestasLeidas($pdo, $nutriId, $pacienteId);
 $aviso = $_SESSION['aviso_ficha'] ?? null;
 unset($_SESSION['aviso_ficha']);
 
@@ -129,13 +131,17 @@ $planHoy = $d['plan'][(int) date('N') - 1];
         <section class="k-card k-card-pad flex flex-col lg:col-span-2">
             <h2 class="k-section-title">Lo que ha comido</h2>
             <p class="mt-0.5 text-sm k-muted">Calorías apuntadas cada día de las dos últimas semanas<?= $meta ? ', frente a su objetivo' : '' ?>.</p>
-            <div class="relative mt-4 min-h-[15rem] flex-1"><canvas id="consumoPaciente" class="absolute inset-0" aria-label="Calorías comidas por día"></canvas></div>
+            <div class="relative mt-4 min-h-[15rem] flex-1"><canvas id="consumoPaciente" class="absolute inset-0" role="img" aria-label="Calorías apuntadas por día en las dos últimas semanas"></canvas></div>
+            <?= tablaDatos('Calorías apuntadas por día', ['Día', 'Calorías'], array_map(
+                fn($f, $k) => [$fechaCorta($f), $k === null ? 'Sin apuntar' : $entero($k) . ' kcal'],
+                array_keys($consumo['dias']), array_values($consumo['dias']))) ?>
         </section>
         <section class="k-card k-card-pad flex flex-col">
             <h2 class="k-section-title">Peso</h2>
             <p class="mt-0.5 text-sm k-muted"><?= count($pesos) ?> registros<?= $ultimoPeso ? ' · último el ' . e($fechaCorta($ultimoPeso)) : '' ?></p>
             <?php if (count($pesos) >= 2): ?>
-                <div class="relative mt-4 min-h-[12rem] flex-1"><canvas id="pesoPaciente" class="absolute inset-0" aria-label="Evolución del peso"></canvas></div>
+                <div class="relative mt-4 min-h-[12rem] flex-1"><canvas id="pesoPaciente" class="absolute inset-0" role="img" aria-label="Evolución del peso, de <?= e(number_format($pesoInicial, 1, ',', '.')) ?> a <?= e(number_format($pesoActual, 1, ',', '.')) ?> kg"></canvas></div>
+                <?= tablaDatos('Registros de peso', ['Fecha', 'Peso'], array_map(fn($p) => [$fechaCorta($p['fecha']), number_format((float) $p['peso_kg'], 1, ',', '.') . ' kg'], array_reverse($pesos))) ?>
             <?php else: ?>
                 <div class="k-empty mt-4 flex-1 py-8"><span class="k-empty-icon"><?= icono('activity') ?></span><p class="text-sm k-muted">Aún no hay suficientes registros de peso.</p></div>
             <?php endif; ?>
@@ -167,7 +173,7 @@ $planHoy = $d['plan'][(int) date('N') - 1];
 
         <!-- NOTAS -->
         <section id="notas" class="k-card min-w-0 scroll-mt-6">
-            <div class="k-card-head"><h2 class="k-section-title">Notas para <?= e(explode(' ', $nombre)[0]) ?></h2><span class="text-xs k-muted">Las ve en su panel</span></div>
+            <div class="k-card-head"><h2 class="k-section-title">Notas con <?= e(explode(' ', $nombre)[0]) ?></h2><span class="text-xs k-muted"><?= $respuestasNuevas ? '<span class="k-badge k-badge-brand">' . $respuestasNuevas . ($respuestasNuevas === 1 ? ' respuesta nueva' : ' respuestas nuevas') . '</span>' : 'Las ve en su panel y puede responder' ?></span></div>
             <div class="p-5 sm:p-6">
                 <?php if ($aviso): [$tipo, $texto] = $aviso; ?>
                     <div class="k-alert k-alert-<?= $tipo === 'ok' ? 'ok' : 'error' ?> mb-4" role="status"><?= icono($tipo === 'ok' ? 'check' : 'alert') ?><p><?= e($texto) ?></p></div>
@@ -181,11 +187,12 @@ $planHoy = $d['plan'][(int) date('N') - 1];
                 </form>
                 <?php if ($notas): ?>
                     <ul class="mt-5 space-y-3">
-                        <?php foreach ($notas as $n): ?>
-                            <li class="k-subtle rounded-2xl p-4 text-sm">
+                        <?php foreach ($notas as $n): $delPaciente = (bool) $n['de_paciente']; ?>
+                            <li class="rounded-2xl p-4 text-sm <?= $delPaciente ? 'k-bubble-mia ml-6' : 'k-subtle mr-6' ?>">
+                                <?php if ($delPaciente): ?><p class="mb-1 flex items-center gap-1.5 text-xs font-medium k-muted"><?= icono('message', 'h-3.5 w-3.5') ?>Responde <?= e(explode(' ', $nombre)[0]) ?></p><?php endif; ?>
                                 <div class="flex items-start justify-between gap-3">
-                                    <p class="whitespace-pre-line leading-relaxed k-strong"><?= e($n['texto']) ?></p>
-                                    <?php if ((int) $n['id_nutricionista'] === $nutriId): ?>
+                                    <p class="min-w-0 whitespace-pre-line break-words leading-relaxed k-strong"><?= e($n['texto']) ?></p>
+                                    <?php if (!$delPaciente && (int) $n['id_nutricionista'] === $nutriId): ?>
                                         <form method="POST" action="<?= e($urlFicha) ?>" class="m-0 shrink-0">
                                             <?= campoCsrf() ?>
                                             <input type="hidden" name="accion" value="borrar_nota">
@@ -194,7 +201,7 @@ $planHoy = $d['plan'][(int) date('N') - 1];
                                         </form>
                                     <?php endif; ?>
                                 </div>
-                                <p class="mt-2 text-xs k-muted"><?= e(formatearFecha($n['fecha'])) ?> · <?= $n['leida'] ? 'Leída' : 'Sin leer' ?></p>
+                                <p class="mt-2 text-xs k-muted"><?= e(formatearFecha($n['fecha'])) ?><?= $delPaciente ? '' : ' · ' . ($n['leida'] ? 'Leída' : 'Sin leer') ?></p>
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -214,4 +221,5 @@ $planHoy = $d['plan'][(int) date('N') - 1];
     ]) ?>;
 </script>
 
+<?php $usaGraficas = true; // carga Chart.js (footer.php) ?>
 <?php include_once __DIR__ . '/../templates/footer.php'; ?>

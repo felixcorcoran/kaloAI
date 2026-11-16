@@ -2,6 +2,7 @@
 /**
  * LÓGICA: TU CUENTA - KaloAI
  * Acciones (por POST, con token CSRF):
+ *   resumen    activa o desactiva el resumen semanal por correo
  *   descargar  descarga en JSON todo lo que KaloAI guarda de la persona
  *   borrar     borra la cuenta y todos sus datos (pide la contraseña)
  * En modo gestión (un nutricionista dentro de la cuenta de su paciente) no se
@@ -26,6 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !empty($_SESSION['is_impersonating'
 $userId = (int) $_SESSION['user_id'];
 $pdo = connectDB();
 $accion = $_POST['accion'] ?? '';
+
+if ($accion === 'resumen') {
+    $activar = ($_POST['activar'] ?? '') === '1';
+    cambiarResumenSemanal($pdo, $userId, $activar);
+    $_SESSION['aviso_cuenta'] = ['ok', $activar
+        ? 'Resumen semanal activado. El primero te llegará el lunes que viene.'
+        : 'Resumen semanal desactivado. No te enviaremos más.'];
+    header('Location: perfil.php#cuenta');
+    exit;
+}
 
 if ($accion === 'descargar') {
     $datos = exportarDatosCuenta($pdo, $userId);

@@ -28,26 +28,9 @@ $pdo = connectDB();
    1. CÁLCULO DE NECESIDADES VS. INVENTARIO
    ========================================================================== */
 
-// A. Obtener ingredientes necesarios según el plan semanal
-$sqlNecesario = "SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unidad 
-                 FROM comida_planificada cp
-                 JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
-                 JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                 WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?";
-
-$stmtNec = $pdo->prepare($sqlNecesario);
 // Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
 $semana = semanaValida($_GET['semana'] ?? null);
-$stmtNec->execute([$userId, $semana]);
-// Cada comida se cocina para toda la casa (perfil: «¿Para cuántas personas cocinas?»)
-$comensales = comensalesDe($pdo, (int) $userId);
-$necesariosRaw = multiplicarRaciones($stmtNec->fetchAll(), $comensales);
-
-// Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
-// sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.
-$stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
-$stmtInv->execute([$userId]);
-$listaCompra = calcularListaCompra($necesariosRaw, $stmtInv->fetchAll());
+['lista' => $listaCompra, 'comensales' => $comensales] = listaCompraDeSemana($pdo, (int) $userId, $semana);
 
 /* ==========================================================================
    2. CONSTRUCCIÓN DEL HTML PARA EL PDF

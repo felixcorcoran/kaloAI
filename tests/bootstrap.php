@@ -29,3 +29,5 @@ require_once __DIR__ . '/../core/cuenta.php';
 require_once __DIR__ . '/../core/contrasena.php';
 require_once __DIR__ . '/../core/seguimiento.php';
 require_once __DIR__ . '/../core/contacto.php';
+require_once __DIR__ . '/../core/resumen_semanal.php';
+require_once __DIR__ . '/../core/tique.php';

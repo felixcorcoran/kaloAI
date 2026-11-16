@@ -14,6 +14,7 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/../../core/seguridad.php';
 require_once __DIR__ . '/iconos.php';
+require_once __DIR__ . '/tabla_datos.php';
 
 $appName = "KaloAI";
 $userName = 'Usuario';
@@ -50,7 +51,7 @@ $urlInicio = BASE_URL . match ($rol) {
 
 // Secciones de la navegación: [texto, icono, ruta, páginas que la marcan como activa]
 $seccionesUsuario = [
-    ['Hoy',      'home',     'views/dashboard.php',                  ['dashboard.php']],
+    ['Hoy',      'home',     'views/dashboard.php',                  ['dashboard.php', 'mensajes.php']],
     ['Plan',     'calendar', 'views/user/planificacion_semanal.php', ['planificacion_semanal.php']],
     ['Recetas',  'book',     'views/user/mis_recetas.php',           ['mis_recetas.php', 'detalle_receta.php', 'crear_receta.php', 'editar_receta.php', 'generar_receta.php']],
     ['Despensa', 'package',  'views/user/inventario.php',            ['inventario.php']],
@@ -91,6 +92,7 @@ $pintarEnlace = function (array $seccion) use ($paginaActual) {
     <!-- Token CSRF para las peticiones que hace main.js (fetch y formularios creados al vuelo) -->
     <meta name="csrf-token" content="<?= e(csrfToken()) ?>">
     <title><?= e($pageTitle ?? $appName) ?></title>
+    <?php if (!empty($noIndexar)): ?><meta name="robots" content="noindex, nofollow"><?php endif; ?>
     <?php include __DIR__ . '/tema.php'; ?>
 
     <meta name="description" content="Recetas creadas con IA según tus calorías, objetivos e intolerancias, con plan semanal, inventario y lista de la compra. Para usuarios y nutricionistas.">
@@ -113,10 +115,9 @@ $pintarEnlace = function (array $seccion) use ($paginaActual) {
     <link rel="icon" type="image/png" sizes="32x32" href="<?= BASE_URL ?>public/icons/favicon-32.png">
     <link rel="apple-touch-icon" href="<?= BASE_URL ?>public/icons/apple-touch-icon.png">
 
-    <!-- Tipografías: DM Sans (aplicación) e Inter / Plus Jakarta Sans (estilos propios de la portada) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <!-- Tipografías desde la propia web: DM Sans (aplicación) e Inter / Plus Jakarta Sans (portada) -->
+    <link rel="preload" href="<?= BASE_URL ?>public/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="<?= BASE_URL ?>public/css/fuentes.css?v=<?= @filemtime(__DIR__ . '/../../public/css/fuentes.css') ?>">
 
     <link rel="stylesheet" href="<?= BASE_URL ?>public/css/style.css">
     <!-- Tailwind compilado (npm run build:css): después de style.css, como hacía el CDN -->

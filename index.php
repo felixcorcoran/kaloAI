@@ -28,11 +28,7 @@ $urlRegistro  = BASE_URL . 'views/auth/registro.php';
 $urlDashboard = BASE_URL . 'views/dashboard.php';
 ?>
 
-<!-- Tipografías: Plus Jakarta Sans para titulares, Inter para el texto.
-     (Lo ideal es mover estas tres líneas a header.php para todo el sitio.) -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<!-- Tipografías: Plus Jakarta Sans para titulares e Inter para el texto (public/css/fuentes.css, cargado en header.php) -->
 
 <style>
     .kalo-home { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
