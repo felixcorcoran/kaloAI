@@ -137,6 +137,9 @@
     }
     .k-card-pad { @apply p-5 sm:p-6; }
     .k-card-head { @apply flex items-center justify-between gap-3 border-b px-5 py-4 sm:px-6; border-color: var(--k-border); }
+    /* Dentro de una rejilla, una tarjeta nunca se ensancha por un texto largo
+       (sin esto, un título truncado en móvil hacía la página más ancha que la pantalla) */
+    .grid > .k-card, .grid > section, .grid > aside { min-width: 0; }
     .k-card-link { @apply transition duration-200; }
     .k-card-link:hover { border-color: var(--k-border-strong); background-color: color-mix(in srgb, var(--k-surface) 92%, var(--k-text)); }
     .k-divider { @apply border-t; border-color: var(--k-border); }

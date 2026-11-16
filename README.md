@@ -107,9 +107,9 @@ Automático: al fusionar en `main`, GitHub Actions pasa los tests y, si van bien
 | `FTP_PASSWORD` | la contraseña de esa cuenta (la del panel del hosting, no la del área de cliente) |
 | `RESEND_API_KEY` | clave de [Resend](https://resend.com) para enviar correos (recuperar la contraseña). Sin ella, la web funciona igual pero no envía correos |
 
-El despliegue escribe la clave de Resend en `core/secretos.php` (fuera del repositorio) y la sube con lo demás. Opcionales, en la pestaña *Variables*: `CORREO_REMITENTE` (por defecto `KaloAI <no-reply@felixcorcoran.es>`; tiene que ser de un dominio verificado en Resend), `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
+El despliegue escribe la clave de Resend en `core/secretos.php` (fuera del repositorio) y la sube con lo demás. Opcionales, en la pestaña *Variables*: `CORREO_CONTACTO` (adónde se avisan los mensajes de la página de contacto; sin ella solo se ven en el panel de administración), `CORREO_REMITENTE` (por defecto `KaloAI <no-reply@felixcorcoran.es>`; tiene que ser de un dominio verificado en Resend), `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
 
-**Para escribir una migración nueva:** crea `database/migraciones/008_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
+**Para escribir una migración nueva:** crea `database/migraciones/009_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
 
 ---
 

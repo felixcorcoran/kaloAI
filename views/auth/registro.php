@@ -85,11 +85,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Si todo ha ido bien, confirmamos los cambios permanentemente
                 $pdo->commit();
                 
-                $message = "¡Registro exitoso! Ya puedes iniciar sesión.";
-                $messageType = 'success';
-                
-                // Limpiamos variables para que no se muestren en el formulario tras el éxito
-                $email = $nombre = "";
+                // Se entra directamente y se lleva al perfil para completar los datos
+                // (antes había que volver a escribir el correo y la contraseña)
+                session_regenerate_id(true);
+                $_SESSION['user_id'] = (int) $newUserId;
+                $_SESSION['user_role_id'] = 3;
+                header('Location: ../user/perfil.php?bienvenida=1');
+                exit;
             }
         } catch (Exception $e) {
             /* 6. GESTIÓN DE FALLOS */

@@ -432,4 +432,15 @@ final class BaseDatosTest extends TestCase
         $this->assertCount(8, $d['recientes']);
         $this->assertCount(2, $d['restricciones']);
     }
+
+    public function testElMensajeDeContactoSeGuardaYAvisaPorCorreo(): void
+    {
+        $correos = [];
+        $id = guardarContacto(self::$pdo, validarContacto(['nombre' => 'Ana <b>', 'email' => 'ana@ejemplo.test', 'mensaje' => 'Quiero usar KaloAI con mis pacientes.']), null,
+            function ($url, $cab, $cuerpo) use (&$correos) { $correos[] = json_decode($cuerpo, true); return [200, '{}']; });
+        $this->assertSame('Ana <b>', $this->valor("SELECT nombre FROM mensaje_contacto WHERE id_mensaje = ?", [$id]));
+        $this->assertSame(0, (int) $this->valor("SELECT leido FROM mensaje_contacto WHERE id_mensaje = ?", [$id]));
+        $this->assertCount(1, $correos);
+        $this->assertStringContainsString('Ana &lt;b&gt;', $correos[0]['html'], 'El nombre va escapado en el correo');
+    }
 }

@@ -316,6 +316,12 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
     </div>
     <p class="k-subtitle -mt-2 mb-6">Con estos datos KaloAI calcula tus calorías y macros diarios, y la IA evita lo que no puedes comer.</p>
 
+    <?php if (isset($_GET['bienvenida']) && !$message): ?>
+        <div class="k-alert k-alert-ok mb-6" role="status">
+            <?= icono('sparkles') ?>
+            <p><strong>¡Te damos la bienvenida a KaloAI!</strong> Completa estos datos y calcularemos tus calorías y macros. Después, la IA te prepara la semana.</p>
+        </div>
+    <?php endif; ?>
     <?php if ($message): ?>
         <div class="k-alert k-alert-<?= $messageType === 'success' ? (($profileData['tdee_calorias'] ?? 0) > 0 ? 'ok' : 'info') : 'error' ?> mb-6" role="alert">
             <?= icono($messageType === 'success' ? 'check' : 'alert') ?>

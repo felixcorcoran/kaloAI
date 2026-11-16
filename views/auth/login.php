@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 /* 3. VERIFICACIÓN DE ESTADO (SEGURIDAD) */
                 // Si el administrador ha marcado 'activo = 0', impedimos el acceso.
                 if ($user['activo'] == 0) {
-                    $error = "🚫 Esta cuenta ha sido suspendida. Contacta con soporte.";
+                    $error = "Esta cuenta está bloqueada. Si crees que es un error, escríbenos desde la página de contacto.";
                 } else {
                     /* 4. LOGIN EXITOSO */
                     // Regeneramos el ID de sesión para prevenir ataques de fijación de sesión.

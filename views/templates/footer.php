@@ -40,7 +40,7 @@
             <!-- NAVEGACIÓN SECUNDARIA: Enlaces rápidos y control de sesión dinámico -->
             <nav class="flex flex-wrap justify-center gap-x-2 gap-y-1 text-sm font-medium md:justify-end" aria-label="Pie de página">
                 <a href="<?php echo BASE_URL; ?>index.php" class="rounded-full px-3 py-2 text-gray-400 transition-colors duration-300 hover:bg-white/5 hover:text-teal-300">Inicio</a>
-                <a href="<?php echo BASE_URL; ?>views/dashboard.php" class="rounded-full px-3 py-2 text-gray-400 transition-colors duration-300 hover:bg-white/5 hover:text-teal-300">Dashboard</a>
+                <a href="<?php echo BASE_URL; ?>views/dashboard.php" class="rounded-full px-3 py-2 text-gray-400 transition-colors duration-300 hover:bg-white/5 hover:text-teal-300">Mi panel</a>
 
                 <!-- LÓGICA DE SESIÓN: Muestra Registro o Logout según el estado del usuario -->
                 <?php if (!isset($_SESSION['user_id'])): ?>

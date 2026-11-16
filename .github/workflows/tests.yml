@@ -109,6 +109,7 @@ jobs:
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           CORREO_REMITENTE: ${{ vars.CORREO_REMITENTE }}
+          CORREO_CONTACTO: ${{ vars.CORREO_CONTACTO }}
         run: |
           # core/secretos.php no está en el repositorio: se escribe aquí y se sube
           # con lo demás. Si el secreto no existe, no se crea y la web funciona
@@ -118,6 +119,7 @@ jobs:
               $lineas = ["<?php", "// Generado por el despliegue a partir de los secretos de GitHub. No editar."];
               $lineas[] = "define(\"RESEND_API_KEY\", " . var_export(getenv("RESEND_API_KEY"), true) . ");";
               if (getenv("CORREO_REMITENTE")) $lineas[] = "define(\"CORREO_REMITENTE\", " . var_export(getenv("CORREO_REMITENTE"), true) . ");";
+              if (getenv("CORREO_CONTACTO")) $lineas[] = "define(\"CORREO_CONTACTO\", " . var_export(getenv("CORREO_CONTACTO"), true) . ");";
               file_put_contents("core/secretos.php", implode("\n", $lineas) . "\n");
             '
             php -l core/secretos.php

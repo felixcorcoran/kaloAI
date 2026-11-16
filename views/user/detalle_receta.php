@@ -100,8 +100,9 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
     </div>
 
     <?php if (!empty($_SESSION['mensaje'])): ?>
-        <div class="k-alert k-alert-ok mb-6"><?= icono('check') ?><p><?= e($_SESSION['mensaje']) ?></p></div>
-        <?php unset($_SESSION['mensaje']); ?>
+        <?php $esError = ($_SESSION['mensaje_tipo'] ?? '') === 'error'; ?>
+        <div class="k-alert k-alert-<?= $esError ? 'error' : 'ok' ?> mb-6"><?= icono($esError ? 'alert' : 'check') ?><p><?= e($_SESSION['mensaje']) ?></p></div>
+        <?php unset($_SESSION['mensaje'], $_SESSION['mensaje_tipo']); ?>
     <?php endif; ?>
 
     <div class="grid gap-6 lg:grid-cols-3">
@@ -192,9 +193,54 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
                     </ul>
                 </div>
             <?php endif; ?>
-            <a href="planificacion_semanal.php" class="k-btn k-btn-secondary mt-6 w-full"><?= icono('calendar') ?>Ir al plan semanal</a>
+            <button type="button" onclick="abrirModal('modalAnadirPlan')" class="k-btn k-btn-primary mt-6 w-full"><?= icono('calendar') ?>Añadir al plan</button>
         </aside>
     </div>
+</div>
+
+<?php
+// Momento propuesto según el tipo de receta, y hoy como día por defecto
+$momentoPropuesto = ['desayuno' => 'Desayuno', 'almuerzo' => 'Almuerzo', 'cena' => 'Cena', 'snack' => 'Merienda'][$estilo['filtro']] ?? 'Almuerzo';
+$hoyNumero = (int) date('N') - 1;
+?>
+<!-- MODAL: AÑADIR AL PLAN -->
+<div id="modalAnadirPlan" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloAnadirPlan">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="anadir_al_plan.php" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="id_receta" value="<?= (int) $receta['id_receta'] ?>">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloAnadirPlan" class="k-modal-title">Añadir al plan</h2>
+        <p class="mt-1 text-sm k-muted">Si en ese hueco ya hay una comida, se sustituye.</p>
+        <div class="mt-5 space-y-4">
+            <div>
+                <label for="planSemana" class="k-label">Semana</label>
+                <select id="planSemana" name="semana" class="k-input">
+                    <?php foreach ([lunesDe(), semanaRelativa(lunesDe(), 1)] as $opcion): ?>
+                        <option value="<?= $opcion ?>"><?= e(nombreSemana($opcion)) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="planDia" class="k-label">Día</label>
+                    <select id="planDia" name="dia" class="k-input">
+                        <?php foreach (DIAS_SEMANA as $n => $dia): ?><option value="<?= $n ?>" <?= $n === $hoyNumero ? 'selected' : '' ?>><?= e($dia) ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label for="planMomento" class="k-label">Comida</label>
+                    <select id="planMomento" name="momento" class="k-input">
+                        <?php foreach (MOMENTOS_COMIDA as $m): ?><option value="<?= e($m) ?>" <?= $m === $momentoPropuesto ? 'selected' : '' ?>><?= e($m) ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-primary"><?= icono('check') ?>Añadir</button>
+        </div>
+    </form>
 </div>
 
 <!-- MODAL: ELIMINAR RECETA -->

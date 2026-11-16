@@ -144,7 +144,7 @@ $planHoy = $d['plan'][(int) date('N') - 1];
 
     <div class="grid gap-6 lg:grid-cols-2">
         <!-- LO ÚLTIMO APUNTADO -->
-        <section class="k-card">
+        <section class="k-card min-w-0">
             <div class="k-card-head"><h2 class="k-section-title">Lo último que ha apuntado</h2></div>
             <?php if (!$d['recientes']): ?>
                 <p class="px-6 py-5 text-sm k-muted">Todavía no ha apuntado ninguna comida.</p>
@@ -166,7 +166,7 @@ $planHoy = $d['plan'][(int) date('N') - 1];
         </section>
 
         <!-- NOTAS -->
-        <section id="notas" class="k-card scroll-mt-6">
+        <section id="notas" class="k-card min-w-0 scroll-mt-6">
             <div class="k-card-head"><h2 class="k-section-title">Notas para <?= e(explode(' ', $nombre)[0]) ?></h2><span class="text-xs k-muted">Las ve en su panel</span></div>
             <div class="p-5 sm:p-6">
                 <?php if ($aviso): [$tipo, $texto] = $aviso; ?>

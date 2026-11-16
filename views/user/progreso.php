@@ -105,40 +105,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_progreso']))
 
     if (empty($errors)) {
         try {
-            // Evitar duplicidad de registros en una misma fecha
+            // Si ese día ya tenía registro, se sustituye (antes había que borrarlo a mano)
             $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM progreso WHERE id_usuario = ? AND fecha = ?");
             $checkStmt->execute([$userId, $fecha]);
-            
-            if ($checkStmt->fetchColumn() > 0) {
-                $f_error = function_exists('formatearFecha') ? formatearFecha($fecha) : $fecha;
-                $message = "Ya existe un registro para el " . $f_error . ". Borra el anterior para actualizar.";
-                $messageType = 'error';
-            } else {
-                $pdo->beginTransaction();
+            $yaExistia = $checkStmt->fetchColumn() > 0;
 
-                $cintura_val = ($cintura_cm > 0) ? $cintura_cm : null;
-
-                // A. Persistencia en historial de progreso
-                $sqlProgreso = "INSERT INTO progreso (id_usuario, fecha, peso_kg, cintura_cm, nota) 
-                                VALUES (?, ?, ?, ?, ?)";
-                $stmtP = $pdo->prepare($sqlProgreso);
-                $stmtP->execute([$userId, $fecha, $peso_kg_input, $cintura_val, $nota]);
-
-                // B. ACTUALIZACIÓN DINÁMICA: Si es la medición más reciente, actualiza el perfil principal
-                $sqlUltima = "SELECT MAX(fecha) FROM progreso WHERE id_usuario = ?";
-                $stmtUltima = $pdo->prepare($sqlUltima);
-                $stmtUltima->execute([$userId]);
-                $fechaMasReciente = $stmtUltima->fetchColumn();
-
-                if ($fecha >= $fechaMasReciente) {
-                    // También recalcula el TDEE y los macros con el nuevo peso
-                    actualizarPesoYObjetivos($pdo, (int) $userId, (float) $peso_kg_input);
-                }
-
-                $pdo->commit();
-                $message = "¡Progreso guardado! Tu peso actual se ha actualizado en el perfil.";
-                $messageType = 'success';
+            $pdo->beginTransaction();
+            if ($yaExistia) {
+                $pdo->prepare("DELETE FROM progreso WHERE id_usuario = ? AND fecha = ?")->execute([$userId, $fecha]);
             }
+
+            $cintura_val = ($cintura_cm > 0) ? $cintura_cm : null;
+
+            // A. Persistencia en historial de progreso
+            $sqlProgreso = "INSERT INTO progreso (id_usuario, fecha, peso_kg, cintura_cm, nota) 
+                            VALUES (?, ?, ?, ?, ?)";
+            $stmtP = $pdo->prepare($sqlProgreso);
+            $stmtP->execute([$userId, $fecha, $peso_kg_input, $cintura_val, $nota]);
+
+            // B. ACTUALIZACIÓN DINÁMICA: Si es la medición más reciente, actualiza el perfil principal
+            $sqlUltima = "SELECT MAX(fecha) FROM progreso WHERE id_usuario = ?";
+            $stmtUltima = $pdo->prepare($sqlUltima);
+            $stmtUltima->execute([$userId]);
+            $fechaMasReciente = $stmtUltima->fetchColumn();
+
+            if ($fecha >= $fechaMasReciente) {
+                // También recalcula el TDEE y los macros con el nuevo peso
+                actualizarPesoYObjetivos($pdo, (int) $userId, (float) $peso_kg_input);
+            }
+
+            $pdo->commit();
+            $message = $yaExistia
+                ? "Registro del " . formatearFecha($fecha) . " actualizado. Tus objetivos se han recalculado."
+                : "¡Progreso guardado! Tus calorías y macros se han recalculado con tu peso.";
+            $messageType = 'success';
         } catch (\PDOException $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             error_log("Error en tabla perfil o progreso: " . $e->getMessage());
@@ -149,6 +149,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_progreso']))
         $message = $errors[0];
         $messageType = 'error';
     }
+}
+
+// Registro rápido desde el panel «Hoy»: se vuelve allí con el aviso
+if (($_POST['volver'] ?? '') === 'panel' && isset($_POST['register_progreso'])) {
+    $_SESSION['aviso_panel'] = [$messageType === 'success' ? 'ok' : 'error', strip_tags((string) $message)];
+    header('Location: ../dashboard.php');
+    exit;
 }
 
 /**

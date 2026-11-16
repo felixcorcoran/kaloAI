@@ -28,3 +28,4 @@ require_once __DIR__ . '/../core/semana_ia.php';
 require_once __DIR__ . '/../core/cuenta.php';
 require_once __DIR__ . '/../core/contrasena.php';
 require_once __DIR__ . '/../core/seguimiento.php';
+require_once __DIR__ . '/../core/contacto.php';

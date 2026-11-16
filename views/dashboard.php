@@ -258,6 +258,22 @@ $planHecho = function (string $momento) use ($comidasHoy, $registrosPorMomento):
 };
 $comidasHechas = count(array_filter(array_keys($comidasHoy), fn($m) => $planHecho($m) !== null));
 $avisoRegistro = $_SESSION['aviso_registro'] ?? null;
+$avisoPanel = $_SESSION['aviso_panel'] ?? null;
+
+// Primeros pasos (solo hasta que se completan los imprescindibles)
+$stmtPrimeros = $pdo->prepare("SELECT (SELECT COUNT(*) FROM registro_comida WHERE id_usuario = ?)");
+$stmtPrimeros->execute([$userId]);
+$haApuntado = (int) $stmtPrimeros->fetchColumn() > 0;
+$pasos = [
+    ['Completa tu perfil', 'Edad, altura, peso y objetivo: con ellos calculamos tus calorías.', 'user/perfil.php', 'user', $tienePerfil ?? false],
+    ['Marca lo que no puedes comer', 'Alergias e intolerancias: la IA nunca las usará.', 'user/perfil.php', 'ban', !empty($restricciones)],
+    ['Apunta lo que tienes en casa', 'La compra solo te pedirá lo que falta.', 'user/inventario.php', 'package', !empty($inventario)],
+    ['Planifica tu semana', 'Con «Rellenar con IA» en un minuto.', 'user/planificacion_semanal.php', 'calendar', $huecosPlanificados > 0],
+    ['Apunta lo que comes', 'Marca «Hecho» en tus comidas de hoy.', '#comidas', 'check', $haApuntado],
+];
+$pasosHechos = count(array_filter(array_column($pasos, 4)));
+$mostrarPrimerosPasos = !($pasos[0][4] && $pasos[3][4] && $pasos[4][4]);
+unset($_SESSION['aviso_panel']);
 unset($_SESSION['aviso_registro']);
 $metaKcal = (int) ($profileData['calorias_netas_objetivo'] ?? 0);
 $metas = ['p' => (int) ($profileData['proteinas_objetivo_g'] ?? 0), 'c' => (int) ($profileData['carbohidratos_objetivo_g'] ?? 0), 'g' => (int) ($profileData['grasas_objetivo_g'] ?? 0)];
@@ -316,10 +332,14 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
             <p class="k-subtitle">Así va tu día y tu semana.</p>
         </div>
         <div class="flex gap-2">
-            <a href="user/progreso.php" class="k-btn k-btn-secondary"><?= icono('activity') ?>Registrar peso</a>
+            <button type="button" onclick="abrirModal('modalPeso')" class="k-btn k-btn-secondary"><?= icono('activity') ?>Registrar peso</button>
             <a href="user/generar_receta.php" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Generar receta</a>
         </div>
     </div>
+
+    <?php if ($avisoPanel): [$tipoPanel, $textoPanel] = $avisoPanel; ?>
+        <div class="k-alert k-alert-<?= $tipoPanel === 'ok' ? 'ok' : 'error' ?> mb-6" role="status"><?= icono($tipoPanel === 'ok' ? 'check' : 'alert') ?><p><?= e($textoPanel) ?></p></div>
+    <?php endif; ?>
 
     <?php if ($notasSinLeer): $nueva = $notasNutri[0]; ?>
         <!-- NOTA NUEVA DEL NUTRICIONISTA -->
@@ -332,7 +352,32 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
         </div>
     <?php endif; ?>
 
-    <?php if (!$tienePerfil): ?>
+    <?php if ($mostrarPrimerosPasos): ?>
+        <!-- PRIMEROS PASOS -->
+        <section class="k-card k-card-pad mb-6" aria-labelledby="tituloPrimerosPasos">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 id="tituloPrimerosPasos" class="k-section-title">Primeros pasos</h2>
+                    <p class="mt-0.5 text-sm k-muted">Cinco minutos y KaloAI empieza a trabajar para ti.</p>
+                </div>
+                <p class="text-sm tabular-nums k-muted"><span class="font-semibold k-strong"><?= $pasosHechos ?></span> de <?= count($pasos) ?></p>
+            </div>
+            <div class="k-track mt-3 h-1.5"><div class="k-bar" style="width: <?= round($pasosHechos / count($pasos) * 100) ?>%"></div></div>
+            <ol class="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <?php foreach ($pasos as $i => [$titulo, $texto, $url, $ic, $hecho]): ?>
+                    <li>
+                        <a href="<?= $url ?>" class="k-subtle flex h-full gap-3 rounded-2xl p-3.5 transition hover:ring-1 hover:ring-[color:var(--k-border-strong)] <?= $hecho ? 'opacity-60' : '' ?>">
+                            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold" style="<?= $hecho ? 'background-color: var(--k-brand); color: var(--k-inverse-text);' : 'border: 1px solid var(--k-border-strong);' ?>"><?= $hecho ? icono('check', 'h-3.5 w-3.5') : $i + 1 ?></span>
+                            <span class="min-w-0">
+                                <span class="block text-sm font-medium k-strong <?= $hecho ? 'line-through decoration-1' : '' ?>"><?= $titulo ?></span>
+                                <span class="mt-0.5 block text-xs leading-snug k-muted"><?= $texto ?></span>
+                            </span>
+                        </a>
+                    </li>
+                <?php endforeach; ?>
+            </ol>
+        </section>
+    <?php elseif (!$tienePerfil): ?>
         <div class="k-alert k-alert-info mb-6 items-center">
             <?= icono('info') ?>
             <p class="flex-1">Completa tu perfil para que KaloAI calcule tus calorías y macros diarios.</p>
@@ -403,6 +448,8 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
         </a>
     </div>
 
+    <!-- En móvil, las comidas de hoy (lo que más se usa) van antes que las gráficas -->
+    <div class="flex flex-col">
     <!-- SEMANA Y MACROS -->
     <div class="mt-4 grid gap-4 lg:grid-cols-3">
         <section class="k-card k-card-pad flex flex-col lg:col-span-2">
@@ -448,7 +495,7 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
     </div>
 
     <!-- COMIDAS DE HOY Y PESO -->
-    <div class="mt-4 grid gap-4 lg:grid-cols-3">
+    <div class="order-first mt-4 grid gap-4 lg:order-none lg:grid-cols-3">
         <section id="comidas" class="k-card scroll-mt-6 lg:col-span-2">
             <div class="k-card-head flex-wrap gap-3">
                 <div>
@@ -545,6 +592,8 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
         </section>
     </div>
 
+    </div>
+
     <!-- RESUMEN: RESTRICCIONES, NUTRICIONISTA Y BIBLIOTECA -->
     <div class="mt-4 grid gap-4 md:grid-cols-3">
         <a href="user/perfil.php" class="k-card k-card-link k-card-pad">
@@ -589,15 +638,15 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
 
     <!-- ACCESOS -->
     <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <?php foreach ([['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus menús de los 7 días', 'k-tile-indigo'],
-                        ['user/mis_recetas.php', 'book', 'Mis recetas', 'Las tuyas y las de la IA', 'k-tile-rose'],
-                        ['user/lista_compra.php', 'cart', 'Lista de la compra', 'Lo que te falta comprar', ''],
-                        ['user/inventario.php', 'package', 'Despensa', 'Lo que ya tienes en casa', 'k-tile-amber']] as [$url, $ic, $titulo, $texto, $tile]): ?>
+        <?php foreach ([['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus 7 días de menú', 'k-tile-indigo'],
+                        ['user/mis_recetas.php', 'book', 'Mis recetas', 'Tuyas y de la IA', 'k-tile-rose'],
+                        ['user/lista_compra.php', 'cart', 'Compra', 'Lo que te falta', ''],
+                        ['user/inventario.php', 'package', 'Despensa', 'Lo que tienes en casa', 'k-tile-amber']] as [$url, $ic, $titulo, $texto, $tile]): ?>
             <a href="<?= $url ?>" class="k-card k-card-link group flex items-center gap-4 p-5">
                 <span class="k-icon-tile <?= $tile ?> transition-transform group-hover:scale-105"><?= icono($ic) ?></span>
                 <span class="min-w-0 flex-1">
                     <span class="block font-medium k-strong"><?= $titulo ?></span>
-                    <span class="block truncate text-sm k-muted"><?= $texto ?></span>
+                    <span class="block text-sm leading-snug k-muted"><?= $texto ?></span>
                 </span>
                 <?= icono('chevron-right', 'h-4 w-4 shrink-0 k-muted transition-transform group-hover:translate-x-0.5') ?>
             </a>
@@ -609,6 +658,33 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
 $hora = (int) date('G');
 $momentoPorHora = $hora < 11 ? 'Desayuno' : ($hora < 13 ? 'Media Mañana' : ($hora < 16 ? 'Almuerzo' : ($hora < 20 ? 'Merienda' : 'Cena')));
 ?>
+<!-- MODAL: REGISTRAR EL PESO DE HOY (se guarda en Progreso) -->
+<div id="modalPeso" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloPeso">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="user/progreso.php" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="fecha" value="<?= date('Y-m-d') ?>">
+        <input type="hidden" name="volver" value="panel">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloPeso" class="k-modal-title">Tu peso de hoy</h2>
+        <p class="mt-1 text-sm k-muted">Con él se recalculan tus calorías y macros.<?= $pesoActual !== null ? ' El último: ' . $coma($pesoActual) . ' kg.' : '' ?></p>
+        <div class="mt-5 grid grid-cols-2 gap-3">
+            <div>
+                <label for="pesoRapido" class="k-label">Peso (kg)</label>
+                <input id="pesoRapido" name="peso_kg" type="number" step="0.1" min="30" max="350" required inputmode="decimal" class="k-input" placeholder="<?= $pesoActual !== null ? e($coma($pesoActual)) : '70,0' ?>" data-autofocus>
+            </div>
+            <div>
+                <label for="cinturaRapida" class="k-label">Cintura (cm)</label>
+                <input id="cinturaRapida" name="cintura_cm" type="number" step="0.1" min="40" max="250" inputmode="decimal" class="k-input" placeholder="Opcional">
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" name="register_progreso" value="1" class="k-btn k-btn-primary"><?= icono('check') ?>Guardar</button>
+        </div>
+    </form>
+</div>
+
 <!-- MODAL: HE COMIDO OTRA COSA -->
 <div id="modalComidaLibre" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloComidaLibre">
     <div class="k-modal-backdrop"></div>
