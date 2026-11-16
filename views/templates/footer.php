@@ -40,7 +40,7 @@
             <!-- NAVEGACIÓN SECUNDARIA: Enlaces rápidos y control de sesión dinámico -->
             <nav class="flex flex-wrap justify-center gap-x-2 gap-y-1 text-sm font-medium md:justify-end" aria-label="Pie de página">
                 <a href="<?php echo BASE_URL; ?>index.php" class="rounded-full px-3 py-2 text-gray-400 transition-colors duration-300 hover:bg-white/5 hover:text-teal-300">Inicio</a>
-                <a href="<?php echo BASE_URL; ?>views/dashboard.php" class="rounded-full px-3 py-2 text-gray-400 transition-colors duration-300 hover:bg-white/5 hover:text-teal-300">Dashboard</a>
+                <a href="<?php echo BASE_URL; ?>views/dashboard.php" class="rounded-full px-3 py-2 text-gray-400 transition-colors duration-300 hover:bg-white/5 hover:text-teal-300">Mi panel</a>
 
                 <!-- LÓGICA DE SESIÓN: Muestra Registro o Logout según el estado del usuario -->
                 <?php if (!isset($_SESSION['user_id'])): ?>
@@ -70,9 +70,16 @@
 <script>
     // En modo oscuro, los textos y las líneas de los gráficos en tonos claros
     if (window.Chart) {
+        Chart.defaults.locale = 'es-ES';
         Chart.defaults.font.family = '"DM Sans", ui-sans-serif, system-ui, sans-serif';
         Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--k-muted').trim() || '#71717a';
         Chart.defaults.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--k-border').trim() || 'rgba(0,0,0,0.07)';
+    }
+</script>
+<script>
+    // App instalable: el service worker solo guarda estilos, scripts e iconos (nunca páginas con datos)
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => navigator.serviceWorker.register('<?= BASE_URL ?>sw.js').catch(() => {}));
     }
 </script>
 </body>

@@ -322,6 +322,37 @@ $urlDashboard = BASE_URL . 'views/dashboard.php';
     </section>
 
     <!-- ==========================================================
+         TODO LO QUE HACE KALOAI
+         ========================================================== -->
+    <section id="funciones" class="scroll-mt-20 bg-white py-20 md:py-28" aria-labelledby="funciones-titulo">
+        <div class="container mx-auto px-5 sm:px-6">
+            <div class="mx-auto max-w-2xl text-center">
+                <p class="text-xs font-bold uppercase tracking-[0.22em] text-teal-600 sm:text-sm">Todo en un sitio</p>
+                <h2 id="funciones-titulo" class="text-balance font-display mt-4 text-[clamp(2rem,6.5vw,3.25rem)] font-extrabold leading-[1.08] tracking-[-0.025em] text-gray-900">
+                    Del plan a la mesa, <span class="text-gradient">sin hojas de cálculo</span>
+                </h2>
+                <p class="mt-5 text-lg leading-relaxed text-gray-600">Lo que KaloAI hace por ti cada semana.</p>
+            </div>
+            <ul class="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                <?php foreach ([
+                    ['sparkles', 'Tu semana en un minuto', 'La IA rellena los huecos de tu plan con recetas para tus calorías, sin lo que no puedes comer y aprovechando tu despensa.'],
+                    ['check', 'Lo que comes de verdad', 'Marca «Hecho» en cada comida o apunta lo que tomes fuera del plan; la IA calcula sus calorías por ti.'],
+                    ['cart', 'Compra por secciones', 'La lista resta lo que ya tienes, se ordena como el súper y multiplica las cantidades si cocinas para más gente.'],
+                    ['activity', 'Tu progreso, claro', 'Peso, cintura, IMC y ritmo semanal en gráficas; tus objetivos se recalculan con cada registro.'],
+                    ['users', 'Con tu nutricionista', 'Puede seguir tu evolución, ajustar tu plan y dejarte notas que ves en tu panel.'],
+                    ['download', 'En tu móvil', 'Instálala en la pantalla de inicio como una app. Tus datos son tuyos: descárgalos o bórralos cuando quieras.'],
+                ] as [$ic, $titulo, $texto]): ?>
+                    <li class="group rounded-3xl border border-gray-100 bg-gray-50/60 p-7 transition duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-xl hover:shadow-teal-900/5">
+                        <span class="grid h-12 w-12 place-items-center rounded-2xl bg-teal-50 text-teal-600 ring-1 ring-teal-100 transition duration-300 group-hover:bg-teal-600 group-hover:text-white"><?= icono($ic, 'h-6 w-6') ?></span>
+                        <h3 class="font-display mt-5 text-lg font-bold text-gray-900"><?= $titulo ?></h3>
+                        <p class="mt-2 leading-relaxed text-gray-600"><?= $texto ?></p>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+    </section>
+
+    <!-- ==========================================================
          BENEFICIOS
          ========================================================== -->
     <section class="bg-gradient-to-b from-gray-50 via-teal-50 to-teal-50 pt-8 pb-24 md:pb-32" aria-labelledby="beneficios-titulo">

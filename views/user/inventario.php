@@ -208,8 +208,8 @@ require_once __DIR__ . '/../../core/recetas.php';
 $stmtPlan = $pdo->prepare("SELECT DISTINCT dr.nombre_ingrediente FROM comida_planificada cp
                            JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
                            JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                           WHERE ps.id_usuario = ?");
-$stmtPlan->execute([$userId]);
+                           WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+$stmtPlan->execute([$userId, lunesDe()]);
 $clavesPlan = array_flip(array_map(fn($n) => claveProducto((string) $n), $stmtPlan->fetchAll(PDO::FETCH_COLUMN)));
 $enPlan = fn(array $item) => isset($clavesPlan[claveProducto((string) $item['nombre_ingrediente'])]);
 $usadosEnPlan = count(array_filter($inventarioItems, $enPlan));

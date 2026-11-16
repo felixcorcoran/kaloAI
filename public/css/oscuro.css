@@ -28,7 +28,8 @@
 :where(.dark) .bg-white\/40 { background-color: rgb(21 21 23 / 0.4); }
 :where(.dark) .bg-gray-50,
 :where(.dark) .hover\:bg-gray-50:hover { background-color: var(--k-page); }
-:where(.dark) .bg-gray-50\/50 { background-color: rgb(255 255 255 / 0.02); }
+:where(.dark) .bg-gray-50\/50,
+:where(.dark) .bg-gray-50\/60 { background-color: rgb(255 255 255 / 0.02); }
 :where(.dark) .bg-gray-50\/30 { background-color: rgb(255 255 255 / 0.02); }
 :where(.dark) .bg-gray-50\/20 { background-color: rgb(255 255 255 / 0.02); }
 :where(.dark) .bg-gray-100,

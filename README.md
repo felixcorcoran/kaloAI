@@ -13,9 +13,17 @@ Plataforma de nutrición con recetas generadas por IA según las calorías, los 
 ## Qué hace
 
 - **Recetas con IA:** Google Gemini genera recetas a partir del perfil (calorías, macros, alergias e intolerancias), de lo que ya hay planificado ese día y del inventario. Las alergias van en el prompt y, además, el servidor revisa la receta que devuelve la IA: si incluye un alimento prohibido, la descarta y pide otra.
-- **Plan semanal, inventario y lista de la compra:** la lista se descarga en PDF (Dompdf).
+- **Rellenar la semana con IA:** en una sola llamada, la IA propone varias recetas para cada comida elegida y se reparten por los huecos libres del plan, sin tocar lo ya planificado ni pasar del objetivo diario de calorías.
+- **Lo que se come de verdad:** cada comida del plan se marca como «Hecho» y lo que se toma fuera del plan se apunta a mano (la IA puede estimar sus calorías). El panel «Hoy» y la gráfica de la semana comparan lo planificado con lo comido, y el nutricionista ve cuántos días apunta cada paciente.
+- **Plan por semanas:** cada semana tiene su plan; se puede volver a las pasadas (con lo que se comió cada día), preparar las siguientes y copiar la semana anterior en los huecos libres.
+- **Inventario y lista de la compra** de esta semana o de la que viene, agrupada por secciones del súper; la lista se descarga en PDF (Dompdf).
+- **Favoritas y comensales:** cada receta se puede marcar como favorita (filtro propio y primeras al elegir receta para el plan). En el perfil se elige para cuántas personas se cocina: la lista de la compra multiplica las cantidades y el detalle de una receta se puede ver para N personas.
+- **Recetas escritas a mano:** la IA puede calcular sus calorías y macros por ración a partir de los ingredientes.
+- **Recuperar la contraseña:** enlace por correo (Resend) que caduca en una hora y sirve una sola vez; en la base de datos solo se guarda su hash.
+- **Tu cuenta:** cada persona puede descargar todos sus datos en JSON o borrar su cuenta (con su contraseña).
+- **App instalable (PWA):** se puede añadir a la pantalla de inicio del móvil; sin conexión muestra un aviso. El service worker solo guarda estilos, scripts e iconos, nunca páginas con datos personales.
 - **Progreso:** gráficos de peso y macros con Chart.js.
-- **Roles:** el nutricionista vincula pacientes y puede gestionar su cuenta en un modo aparte, con una barra que lo indica; el administrador gestiona usuarios.
+- **Roles:** el nutricionista vincula pacientes, sigue su evolución en una ficha (peso, lo que come cada día, constancia y plan de la semana) sin entrar en su cuenta, les deja notas que ven en su panel y, si hace falta, gestiona su cuenta en un modo aparte con una barra que lo indica; el administrador gestiona usuarios.
 - **Modo claro y oscuro:** sigue el tema del sistema o el que elijas con el botón de la cabecera, y lo recuerda.
 
 ## Cómo está hecho
@@ -97,10 +105,11 @@ Automático: al fusionar en `main`, GitHub Actions pasa los tests y, si van bien
 | --- | --- |
 | `FTP_USERNAME` | el usuario FTP de tu cuenta de InfinityFree (empieza por `if0_`) |
 | `FTP_PASSWORD` | la contraseña de esa cuenta (la del panel del hosting, no la del área de cliente) |
+| `RESEND_API_KEY` | clave de [Resend](https://resend.com) para enviar correos (recuperar la contraseña). Sin ella, la web funciona igual pero no envía correos |
 
-Opcionales, en la pestaña *Variables*: `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
+El despliegue escribe la clave de Resend en `core/secretos.php` (fuera del repositorio) y la sube con lo demás. Opcionales, en la pestaña *Variables*: `CORREO_CONTACTO` (adónde se avisan los mensajes de la página de contacto; sin ella solo se ven en el panel de administración), `CORREO_REMITENTE` (por defecto `KaloAI <no-reply@felixcorcoran.es>`; tiene que ser de un dominio verificado en Resend), `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
 
-**Para escribir una migración nueva:** crea `database/migraciones/003_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
+**Para escribir una migración nueva:** crea `database/migraciones/009_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
 
 ---
 

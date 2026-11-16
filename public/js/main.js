@@ -157,7 +157,8 @@ function abrirResumenDia(nombre, totales) {
 
 /** Quitar una comida del plan. */
 function confirmarEliminarComida(id) {
-    confirmar('modalEliminar', () => enviarPost('planificacion_semanal.php', { eliminar_id: id }));
+    // Se envía a la misma dirección (con ?semana=...) para volver a la semana que se estaba viendo
+    confirmar('modalEliminar', () => enviarPost('planificacion_semanal.php' + window.location.search, { eliminar_id: id }));
 }
 
 /* ==========================================================================
@@ -205,13 +206,48 @@ function aplicarFiltrosRecetas() {
     const termino = (document.getElementById('recipeSearch')?.value || '').toLowerCase().trim();
     let visibles = 0;
     tarjetas.forEach(tarjeta => {
-        const coincide = (window.filtroRecetaActual === 'todos' || tarjeta.dataset.tipo === window.filtroRecetaActual)
+        const filtro = window.filtroRecetaActual || 'todos';
+        const coincide = (filtro === 'todos' || (filtro === 'favoritas' ? tarjeta.dataset.favorita === '1' : tarjeta.dataset.tipo === filtro))
             && tarjeta.dataset.titulo.includes(termino);
         tarjeta.hidden = !coincide;
         if (coincide) visibles++;
     });
     const sinResultados = document.getElementById('noResults');
     if (sinResultados) sinResultados.hidden = visibles > 0;
+}
+
+/** Marca o desmarca una receta como favorita sin recargar la página. */
+async function alternarFavorita(boton) {
+    boton.disabled = true;
+    try {
+        const datos = new FormData();
+        datos.append('id_receta', boton.dataset.receta);
+        const respuesta = await fetch(boton.dataset.url || 'favorita.php', {
+            method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf(), 'Accept': 'application/json' },
+        });
+        const json = await respuesta.json();
+        if (!json.success) return;
+        boton.setAttribute('aria-pressed', json.favorita ? 'true' : 'false');
+        boton.setAttribute('aria-label', (json.favorita ? 'Quitar de favoritas: ' : 'Añadir a favoritas: ') + boton.dataset.titulo);
+        const tarjeta = boton.closest('.recipe-card');
+        if (tarjeta) { tarjeta.dataset.favorita = json.favorita ? '1' : '0'; aplicarFiltrosRecetas(); }
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+/** Detalle de receta: cantidades de los ingredientes para N personas. */
+function cambiarPersonasReceta(cambio) {
+    const salida = document.getElementById('personasReceta');
+    if (!salida) return;
+    const personas = Math.max(1, Math.min(12, (parseInt(salida.textContent, 10) || 1) + cambio));
+    salida.textContent = personas;
+    document.getElementById('personasTexto').textContent = personas === 1 ? 'persona' : 'personas';
+    document.querySelectorAll('[data-cantidad]').forEach(celda => {
+        const total = parseFloat(celda.dataset.cantidad) * personas;
+        const unidad = celda.dataset.unidad || '';
+        celda.textContent = total > 0 ? `${(Math.round(total * 100) / 100).toLocaleString('es-ES')} ${unidad}`.trim() : '';
+    });
 }
 
 function abrirModalEliminar(id) {
@@ -296,10 +332,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Formularios largos (la IA tarda): al enviarlos se muestra su pantalla de espera
+    document.querySelectorAll('form[data-espera]').forEach(formulario => {
+        formulario.addEventListener('submit', (evento) => {
+            if (formulario.querySelector('input[name="momentos[]"]') && !formulario.querySelector('input[name="momentos[]"]:checked')) {
+                evento.preventDefault();
+                alert('Elige al menos una comida del día.');
+                return;
+            }
+            const capa = document.getElementById(formulario.dataset.espera);
+            if (!capa) return;
+            formulario.closest('.k-modal')?.setAttribute('hidden', '');
+            capa.hidden = false;
+            const texto = capa.querySelector('[data-frases]');
+            if (texto) {
+                const frases = texto.dataset.frases.split('|');
+                let i = 0;
+                setInterval(() => { texto.textContent = frases[++i % frases.length]; }, 2500);
+            }
+        });
+    });
+
     iniciarRestricciones();
     iniciarProgreso();
     iniciarGraficoPanel();
     iniciarGraficoAdmin();
+    iniciarFichaPaciente();
     iniciarCarrusel();
 });
 
@@ -444,6 +502,33 @@ function varCss(nombre, porDefecto) {
     return getComputedStyle(document.documentElement).getPropertyValue(nombre).trim() || porDefecto;
 }
 
+/** Ficha del paciente (nutricionista): calorías de cada día y peso. */
+function iniciarFichaPaciente() {
+    const datos = window.fichaPaciente;
+    if (!datos || !window.Chart) return;
+    graficoPeso(document.getElementById('pesoPaciente'), datos.progreso || [], true);
+    const lienzo = document.getElementById('consumoPaciente');
+    if (!lienzo) return;
+    const marca = colorMarca();
+    const conjuntos = [{ type: 'bar', label: 'Comido', data: datos.consumo, borderRadius: 8, borderSkipped: false, barPercentage: 0.6,
+                         backgroundColor: datos.consumo.map(v => datos.meta && v > datos.meta * 1.1 ? varCss('--k-danger', '#ef4444') : marca), order: 2 }];
+    if (datos.meta > 0) {
+        conjuntos.push({ type: 'line', label: 'Objetivo', data: datos.consumo.map(() => datos.meta), borderColor: varCss('--k-muted', '#71717a'),
+                         borderDash: [5, 5], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0, order: 1 });
+    }
+    new Chart(lienzo, {
+        data: { labels: datos.dias, datasets: conjuntos },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => c.raw === null ? 'Sin apuntar' : c.dataset.label + ': ' + Math.round(c.raw) + ' kcal' } } },
+            scales: {
+                x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+                y: { beginAtZero: true, border: { display: false }, ticks: { maxTicksLimit: 4 }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
+            },
+        },
+    });
+}
+
 /** Panel de administración: barras con las altas de cada mes. */
 function iniciarGraficoAdmin() {
     const datos = window.adminData;
@@ -486,15 +571,23 @@ function iniciarGraficoPanel() {
         degradado.addColorStop(0, indigo);
         degradado.addColorStop(1, indigo + '55');
         const conjuntos = [{
-            type: 'bar',
+            type: 'bar', label: 'Planificado',
             data: datos.semana,
-            backgroundColor: datos.semana.map((_, i) => i === datos.hoy ? marca : degradado),
-            borderRadius: 10,
-            borderSkipped: false,
-            barPercentage: 0.62,
-            categoryPercentage: 0.8,
+            backgroundColor: degradado,
+            borderRadius: 8, borderSkipped: false,
+            barPercentage: 0.8, categoryPercentage: 0.7,
             order: 2,
         }];
+        if (datos.comido) {
+            conjuntos.push({
+                type: 'bar', label: 'Comido',
+                data: datos.comido,
+                backgroundColor: datos.comido.map((_, i) => i === datos.hoy ? marca : marca + 'b3'),
+                borderRadius: 8, borderSkipped: false,
+                barPercentage: 0.8, categoryPercentage: 0.7,
+                order: 2,
+            });
+        }
         if (datos.meta > 0) {
             conjuntos.push({
                 type: 'line', label: 'Objetivo', data: datos.semana.map(() => datos.meta),
@@ -506,7 +599,7 @@ function iniciarGraficoPanel() {
             data: { labels: datos.dias, datasets: conjuntos },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => Math.round(c.raw) + ' kcal' + (c.dataset.label ? ' (objetivo)' : '') } } },
+                plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => c.dataset.label + ': ' + Math.round(c.raw) + ' kcal' } } },
                 scales: {
                     x: { grid: { display: false }, border: { display: false } },
                     y: { beginAtZero: true, border: { display: false }, ticks: { maxTicksLimit: 5 }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
@@ -534,6 +627,76 @@ function iniciarGraficoPanel() {
                 plugins: { legend: { display: false }, tooltip: { enabled: hayDatos, displayColors: false, callbacks: { label: c => c.label + ': ' + c.raw + ' kcal' } } },
             },
         });
+    }
+}
+
+/* ==========================================================================
+   8b. PANEL: APUNTAR ALGO COMIDO FUERA DEL PLAN
+   ========================================================================== */
+
+function abrirComidaLibre() {
+    abrirModal('modalComidaLibre');
+}
+
+/** Pide a la IA las calorías y macros de lo escrito y rellena los campos. */
+async function estimarComidaLibre() {
+    const descripcion = document.getElementById('libreDescripcion').value.trim();
+    const aviso = document.getElementById('estimarAviso');
+    const boton = document.getElementById('btnEstimar');
+    const avisar = (texto) => { aviso.textContent = texto; aviso.hidden = !texto; };
+    if (!descripcion) { avisar('Escribe primero qué has comido.'); document.getElementById('libreDescripcion').focus(); return; }
+
+    boton.disabled = true;
+    avisar('Calculando…');
+    try {
+        const datos = new FormData();
+        datos.append('accion', 'estimar');
+        datos.append('descripcion', descripcion);
+        const respuesta = await fetch('user/registrar_comida.php', {
+            method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf(), 'Accept': 'application/json' },
+        });
+        const json = await respuesta.json();
+        if (!json.success) { avisar(json.error || 'No se ha podido calcular.'); return; }
+        ['calorias', 'proteinas', 'carbohidratos', 'grasas'].forEach(campo => {
+            document.getElementById('libre_' + campo).value = json[campo];
+        });
+        avisar('Estimación de la IA: revísala si conoces las cifras exactas.');
+    } catch (e) {
+        avisar('No se ha podido calcular. Escribe las calorías a mano.');
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+/* ==========================================================================
+   8c. RECETA ESCRITA A MANO: CALORÍAS Y MACROS CON IA
+   ========================================================================== */
+
+async function estimarMacrosReceta() {
+    const ingredientes = document.getElementById('ingredientes').value.trim();
+    const aviso = document.getElementById('macrosRecetaAviso');
+    const boton = document.getElementById('btnMacrosReceta');
+    const avisar = (texto) => { aviso.textContent = texto; aviso.hidden = !texto; };
+    if (!ingredientes) { avisar('Escribe primero los ingredientes, uno por línea y con su cantidad.'); document.getElementById('ingredientes').focus(); return; }
+
+    boton.disabled = true;
+    avisar('Calculando…');
+    try {
+        const datos = new FormData();
+        datos.append('titulo', document.getElementById('titulo').value);
+        datos.append('ingredientes', ingredientes);
+        const respuesta = await fetch('estimar_receta.php', {
+            method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf(), 'Accept': 'application/json' },
+        });
+        const json = await respuesta.json();
+        if (!json.success) { avisar(json.error || 'No se ha podido calcular.'); return; }
+        const campos = { calorias: 'calorias_por_racion', proteinas: 'proteinas_g_por_racion', carbohidratos: 'carbohidratos_g_por_racion', grasas: 'grasas_g_por_racion' };
+        Object.entries(campos).forEach(([clave, id]) => { document.getElementById(id).value = json[clave]; });
+        avisar('Calculado por la IA a partir de los ingredientes: revísalo si conoces las cifras exactas.');
+    } catch (e) {
+        avisar('No se ha podido calcular. Escribe las cifras a mano.');
+    } finally {
+        boton.disabled = false;
     }
 }
 

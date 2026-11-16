@@ -44,6 +44,10 @@ $usuarios = $pdo->query("
 
 $logs = $pdo->query("SELECT * FROM logs_actividad ORDER BY fecha DESC LIMIT 10")->fetchAll();
 
+// Mensajes del formulario de contacto: primero los no leídos
+$mensajes = $pdo->query("SELECT * FROM mensaje_contacto ORDER BY leido ASC, fecha DESC LIMIT 15")->fetchAll();
+$mensajesSinLeer = (int) $pdo->query("SELECT COUNT(*) FROM mensaje_contacto WHERE leido = 0")->fetchColumn();
+
 // Uso de la aplicación
 $uso = $pdo->query("SELECT
     (SELECT COUNT(*) FROM receta) AS recetas,
@@ -199,6 +203,40 @@ $avisos = [
             <?php endforeach; ?>
         </ul>
         <p id="sinUsuarios" class="px-6 py-5 text-sm k-muted" hidden>Ninguna cuenta coincide con la búsqueda.</p>
+    </section>
+
+    <!-- MENSAJES DE CONTACTO -->
+    <section id="mensajes" class="k-card mt-6 scroll-mt-6">
+        <div class="k-card-head">
+            <h2 class="k-section-title">Mensajes de contacto</h2>
+            <?php if ($mensajesSinLeer): ?><span class="k-badge k-badge-warn"><?= $mensajesSinLeer ?> sin leer</span><?php else: ?><span class="text-xs k-muted">Al día</span><?php endif; ?>
+        </div>
+        <?php if (empty($mensajes)): ?>
+            <p class="px-6 py-5 text-sm k-muted">Nadie ha escrito todavía desde la página de contacto.</p>
+        <?php else: ?>
+            <ul class="k-list">
+                <?php foreach ($mensajes as $m): ?>
+                    <li class="px-5 py-4 sm:px-6 <?= $m['leido'] ? 'opacity-70' : '' ?>">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="font-medium k-strong"><?= e($m['nombre']) ?> <span class="font-normal k-muted">· <?= e($m['correo']) ?></span><?php if (!$m['leido']): ?> <span class="k-badge k-badge-brand ml-1">Nuevo</span><?php endif; ?></p>
+                                <p class="text-xs k-muted"><?= date('d/m/Y H:i', strtotime($m['fecha'])) ?></p>
+                            </div>
+                            <div class="flex shrink-0 gap-1">
+                                <a href="mailto:<?= e($m['correo']) ?>?subject=<?= rawurlencode('Re: tu mensaje a KaloAI') ?>" class="k-btn k-btn-secondary k-btn-sm"><?= icono('mail') ?>Responder</a>
+                                <?php if (!$m['leido']): ?>
+                                    <form method="POST" action="mensajes.php" class="m-0"><?= campoCsrf() ?><input type="hidden" name="id_mensaje" value="<?= (int) $m['id_mensaje'] ?>"><input type="hidden" name="accion" value="leido">
+                                        <button type="submit" class="k-btn k-btn-ghost k-btn-sm" title="Marcar como leído"><?= icono('check') ?><span class="hidden sm:inline">Leído</span></button></form>
+                                <?php endif; ?>
+                                <form method="POST" action="mensajes.php" class="m-0"><?= campoCsrf() ?><input type="hidden" name="id_mensaje" value="<?= (int) $m['id_mensaje'] ?>"><input type="hidden" name="accion" value="borrar">
+                                    <button type="submit" class="k-btn k-btn-ghost k-btn-icon k-btn-danger-text h-8 w-8" aria-label="Borrar el mensaje de <?= e($m['nombre']) ?>"><?= icono('trash', 'h-4 w-4') ?></button></form>
+                            </div>
+                        </div>
+                        <p class="mt-2 whitespace-pre-line text-sm leading-relaxed k-strong"><?= e($m['mensaje']) ?></p>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
     </section>
 
     <!-- ACTIVIDAD -->

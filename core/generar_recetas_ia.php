@@ -165,7 +165,7 @@ function normalizarRecetaIA(?string $respuesta, array $objetivo): ?array {
  * @param PDO|null      $pdo       Conexión (los tests pasan la de la base de datos de pruebas)
  */
 function generarRecetaInteligente($userId, $soloInventario = false, $dia = null, $momento = null,
-                                  $sugerenciaUsuario = "", ?callable $preguntar = null, ?PDO $pdo = null) {
+                                  $sugerenciaUsuario = "", ?callable $preguntar = null, ?PDO $pdo = null, ?string $lunes = null) {
     $pdo = $pdo ?? connectDB();
     $preguntar = $preguntar ?? 'preguntarGemini';
 
@@ -185,8 +185,8 @@ function generarRecetaInteligente($userId, $soloInventario = false, $dia = null,
                                FROM comida_planificada cp
                                JOIN receta r ON cp.id_receta = r.id_receta
                                JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                               WHERE ps.id_usuario = ? AND cp.dia_semana = ?");
-        $stmt->execute([$userId, $diaNum]);
+                               WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.dia_semana = ?");
+        $stmt->execute([$userId, $lunes ?? lunesDe(), $diaNum]);
         $consumoDelDia = (float) $stmt->fetchColumn();
     }
 

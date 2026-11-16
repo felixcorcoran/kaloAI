@@ -43,8 +43,29 @@ $numero = fn($v) => $v === '' || $v === null ? '' : rtrim(rtrim(number_format((f
     </section>
 
     <section class="k-card k-card-pad">
-        <h2 class="k-section-title">Nutrición por ración</h2>
-        <p class="mt-1 text-sm k-muted">Si no los sabes, déjalos en 0: la receta se guarda igual.</p>
+        <div class="grid gap-6 lg:grid-cols-2">
+            <div>
+                <label for="ingredientes" class="k-label">Ingredientes</label>
+                <textarea id="ingredientes" name="ingredientes" rows="8" required class="k-input font-mono text-[13px]" placeholder="150 g Pechuga de pollo&#10;80 g Arroz integral&#10;2 huevos"><?= e($ingredientesActual) ?></textarea>
+                <p class="k-hint">Uno por línea, con la cantidad delante. Así la lista de la compra sabrá cuánto comprar.</p>
+            </div>
+            <div>
+                <label for="instrucciones" class="k-label">Preparación</label>
+                <textarea id="instrucciones" name="instrucciones" rows="8" required class="k-input" placeholder="Un paso por línea"><?= e($descripcionActual) ?></textarea>
+                <p class="k-hint">Escribe cada paso en una línea.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="k-card k-card-pad">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="k-section-title">Nutrición por ración</h2>
+                <p class="mt-1 text-sm k-muted">¿No los sabes? La IA los calcula a partir de los ingredientes.</p>
+            </div>
+            <button type="button" id="btnMacrosReceta" onclick="estimarMacrosReceta()" class="k-btn k-btn-accent k-btn-sm"><?= icono('sparkles') ?>Calcular con IA</button>
+        </div>
+        <p id="macrosRecetaAviso" class="mt-3 text-xs k-muted" role="status" hidden></p>
         <div class="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <?php foreach ([['calorias_por_racion', 'Calorías', 'kcal', ''],
                             ['proteinas_g_por_racion', 'Proteína', 'g', 'k-macro-p'],
@@ -58,21 +79,6 @@ $numero = fn($v) => $v === '' || $v === null ? '' : rtrim(rtrim(number_format((f
                     </div>
                 </div>
             <?php endforeach; ?>
-        </div>
-    </section>
-
-    <section class="k-card k-card-pad">
-        <div class="grid gap-6 lg:grid-cols-2">
-            <div>
-                <label for="ingredientes" class="k-label">Ingredientes</label>
-                <textarea id="ingredientes" name="ingredientes" rows="8" required class="k-input font-mono text-[13px]" placeholder="150 g Pechuga de pollo&#10;80 g Arroz integral&#10;2 huevos"><?= e($ingredientesActual) ?></textarea>
-                <p class="k-hint">Uno por línea, con la cantidad delante. Así la lista de la compra sabrá cuánto comprar.</p>
-            </div>
-            <div>
-                <label for="instrucciones" class="k-label">Preparación</label>
-                <textarea id="instrucciones" name="instrucciones" rows="8" required class="k-input" placeholder="Un paso por línea"><?= e($descripcionActual) ?></textarea>
-                <p class="k-hint">Escribe cada paso en una línea.</p>
-            </div>
         </div>
     </section>
 

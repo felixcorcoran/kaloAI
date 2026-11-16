@@ -9,6 +9,7 @@ $pageTitle = "KaloAI | Pacientes";
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/recetas.php';
 
 /* ==========================================================================
    SEGURIDAD Y CONTROL DE ACCESO
@@ -38,13 +39,14 @@ $stmt = $pdo->prepare("
     SELECT u.id_usuario, p.nombre, u.correo, p.peso_kg, p.objetivo, p.calorias_netas_objetivo,
            (SELECT pr.peso_kg FROM progreso pr WHERE pr.id_usuario = u.id_usuario AND pr.peso_kg IS NOT NULL ORDER BY pr.fecha ASC LIMIT 1) AS peso_inicial,
            (SELECT MAX(pr.fecha) FROM progreso pr WHERE pr.id_usuario = u.id_usuario) AS ultimo_registro,
-           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario) AS comidas_plan
+           (SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = u.id_usuario AND ps.fecha_inicio_semana = ?) AS comidas_plan,
+           (SELECT COUNT(DISTINCT rc.fecha) FROM registro_comida rc WHERE rc.id_usuario = u.id_usuario AND rc.fecha > DATE_SUB(CURDATE(), INTERVAL 7 DAY)) AS dias_registrados
     FROM usuario u
     JOIN perfil p ON u.id_usuario = p.id_usuario
     WHERE p.id_nutricionista = ?
     ORDER BY p.nombre
 ");
-$stmt->execute([$nutriId]);
+$stmt->execute([lunesDe(), $nutriId]);
 $pacientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 
@@ -88,7 +90,7 @@ include_once __DIR__ . '/../templates/header.php';
         <div>
             <span class="k-pill"><?= icono('users') ?>Panel profesional</span>
             <h1 class="k-title mt-3">Pacientes</h1>
-            <p class="k-subtitle">Entra en la cuenta de un paciente para ajustar su plan, sus recetas y su perfil como si fueras él.</p>
+            <p class="k-subtitle">Sigue su evolución en su ficha, déjale notas y, si hace falta, entra en su cuenta para ajustar su plan.</p>
         </div>
     </div>
 
@@ -147,7 +149,7 @@ include_once __DIR__ . '/../templates/header.php';
                             <div class="min-w-0 flex-1">
                                 <p class="nombre-paciente truncate font-medium k-strong"><?= e($p['nombre'] ?: 'Sin nombre') ?></p>
                                 <p class="correo-paciente truncate text-sm k-muted"><?= e($p['correo']) ?></p>
-                                <p class="mt-0.5 text-xs k-muted"><?= $p['ultimo_registro'] ? 'Último registro: ' . e(formatearFecha($p['ultimo_registro'])) : 'Aún no ha registrado su peso' ?></p>
+                                <p class="mt-0.5 text-xs k-muted"><?= $p['ultimo_registro'] ? 'Último peso: ' . e(formatearFecha($p['ultimo_registro'])) : 'Aún no ha registrado su peso' ?> · Ha apuntado comidas <?= (int) $p['dias_registrados'] ?> de los últimos 7 días</p>
                             </div>
                             <div class="hidden w-28 md:block" title="Comidas planificadas esta semana">
                                 <p class="text-xs k-muted">Plan <span class="tabular-nums k-strong"><?= (int) $p['comidas_plan'] ?>/35</span></p>
@@ -163,11 +165,7 @@ include_once __DIR__ . '/../templates/header.php';
                                 </p>
                                 <p class="text-xs k-muted"><?= e($objetivosTexto[$p['objetivo'] ?? ''] ?? 'Sin objetivo') ?></p>
                             </div>
-                            <form method="POST" action="entrar_como_paciente.php" class="m-0 shrink-0">
-                                <?= campoCsrf() ?>
-                                <input type="hidden" name="id_paciente" value="<?= (int) $p['id_usuario'] ?>">
-                                <button type="submit" class="k-btn k-btn-secondary k-btn-sm">Gestionar <?= icono('arrow-right') ?></button>
-                            </form>
+                            <a href="paciente.php?id=<?= (int) $p['id_usuario'] ?>" class="k-btn k-btn-secondary k-btn-sm shrink-0">Ver ficha <?= icono('arrow-right') ?></a>
                         </li>
                     <?php endforeach; ?>
                 </ul>

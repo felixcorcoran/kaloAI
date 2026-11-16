@@ -70,7 +70,8 @@ final class BaseDatosTest extends TestCase
         $this->assertFalse(asignarRecetaAlPlan(self::$pdo, self::MARCOS, 1, 0, 'Cena'));
         $this->assertTrue(asignarRecetaAlPlan(self::$pdo, self::LAURA, 3, 0, 'Desayuno'));
         $this->assertFalse(asignarRecetaAlPlan(self::$pdo, self::LAURA, 3, 0, 'Recena'), 'Momento fuera del ENUM');
-        $this->assertSame(3, (int) $this->valor("SELECT id_receta FROM comida_planificada WHERE dia_semana = 0 AND momento_comida = 'Desayuno'"));
+        $this->assertSame(3, (int) $this->valor("SELECT id_receta FROM comida_planificada WHERE id_plan = ? AND dia_semana = 0 AND momento_comida = 'Desayuno'",
+            [obtenerPlan(self::$pdo, self::LAURA)]));
     }
 
     public function testGuardarRecetaDeLaIAConIngredientesRepetidos(): void
@@ -127,7 +128,8 @@ final class BaseDatosTest extends TestCase
         // La meta es la del objetivo (calorías netas), no el TDEE de mantenimiento
         $meta = (int) $this->valor("SELECT calorias_netas_objetivo FROM perfil WHERE id_usuario = 3");
         self::$pdo->exec("UPDATE receta SET calorias_por_racion = 800 WHERE id_receta = 2");
-        $planificadas = (int) $this->valor("SELECT SUM(r.calorias_por_racion) FROM comida_planificada cp JOIN receta r USING (id_receta) WHERE cp.dia_semana = 0");
+        $planificadas = (int) $this->valor("SELECT SUM(r.calorias_por_racion) FROM comida_planificada cp JOIN receta r USING (id_receta) WHERE cp.dia_semana = 0 AND cp.id_plan = ?",
+            [obtenerPlan(self::$pdo, self::LAURA)]);
         generarRecetaInteligente(self::LAURA, false, 'Lunes', 'Cena', '', $ia, self::$pdo);
         $this->assertLessThan(round($meta * 0.25), $meta - $planificadas, "El escenario de la prueba es el correcto");
         $this->assertGreaterThan(150, $meta - $planificadas);
@@ -179,5 +181,266 @@ final class BaseDatosTest extends TestCase
         $this->assertSame(migracionesDisponibles(), aplicarMigracionesPendientes(self::$pdo));
         $this->assertSame([], aplicarMigracionesPendientes(self::$pdo));
         $this->assertSame(3, (int) $this->valor("SELECT COUNT(*) FROM rol"));
+    }
+
+    public function testMarcarComoHechaUnaComidaDelPlan(): void
+    {
+        $hoy = new DateTimeImmutable('today');
+        $diaHoy = (int) $hoy->format('N') - 1;
+        asignarRecetaAlPlan(self::$pdo, self::LAURA, 2, $diaHoy, 'Almuerzo');
+        $idComida = (int) $this->valor("SELECT cp.id_comida_planificada FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
+                                         WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.dia_semana = ? AND cp.momento_comida = 'Almuerzo'",
+                                         [self::LAURA, lunesDe($hoy->format('Y-m-d')), $diaHoy]);
+
+        $id = registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->format('Y-m-d'));
+        $this->assertNotNull($id);
+        $this->assertSame($id, registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->format('Y-m-d')), 'Dos clics no duplican');
+        $this->assertSame(620, (int) $this->valor("SELECT calorias FROM registro_comida WHERE id_registro = ?", [$id]));
+
+        // Ni la comida de otra persona ni la de otro día de la semana
+        $this->assertNull(registrarComidaPlanificada(self::$pdo, self::MARCOS, $idComida, $hoy->format('Y-m-d')));
+        $this->assertNull(registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->modify('+1 day')->format('Y-m-d')));
+
+        // El historial se conserva aunque se borre la receta
+        self::$pdo->exec("DELETE FROM comida_planificada WHERE id_receta = 2");
+        self::$pdo->exec("DELETE FROM receta WHERE id_receta = 2");
+        $this->assertSame(620, (int) $this->valor("SELECT calorias FROM registro_comida WHERE id_registro = ?", [$id]));
+        $this->assertNull($this->valor("SELECT id_receta FROM registro_comida WHERE id_registro = ?", [$id]));
+    }
+
+    public function testComidaLibreYBorradoSoloDelDueno(): void
+    {
+        $id = registrarComidaLibre(self::$pdo, self::LAURA, date('Y-m-d'),
+            validarComidaLibre(['descripcion' => 'Pizza', 'momento' => 'Cena', 'calorias' => 850, 'proteinas' => 32]));
+        $this->assertFalse(borrarRegistroComida(self::$pdo, self::MARCOS, $id));
+        $hoy = sumarRegistros(registrosDelDia(self::$pdo, self::LAURA, date('Y-m-d')));
+        $this->assertSame(380.0 + 850.0, $hoy['kcal'], 'Desayuno de los datos de ejemplo + la pizza');
+        $this->assertTrue(borrarRegistroComida(self::$pdo, self::LAURA, $id));
+        $this->assertSame(380.0, caloriasConsumidasPorDia(self::$pdo, self::LAURA, date('Y-m-d'), date('Y-m-d'))[date('Y-m-d')]);
+    }
+
+    public function testRellenarLaSemanaSoloUsaHuecosLibresYNuncaAlergenos(): void
+    {
+        $antes = (int) $this->valor("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan) WHERE ps.id_usuario = ?", [self::LAURA]);
+        $libres = count(huecosLibres(self::$pdo, self::LAURA, ['Merienda']));
+        $this->assertSame(7, $libres);
+
+        $prompts = [];
+        $iaFalsa = function (string $prompt) use (&$prompts) {
+            $prompts[] = $prompt;
+            $receta = fn($titulo, $ingrediente) => ['momento' => 'Merienda', 'titulo' => $titulo, 'calorias' => 150,
+                'macros' => ['proteinas' => 10, 'carbohidratos' => 15, 'grasas' => 5],
+                'ingredientes_usados' => [['nombre' => $ingrediente, 'cantidad' => 30, 'unidad' => 'g']], 'instrucciones' => ['Mezclar.']];
+            return json_encode(['recetas' => [$receta('Yogur con cacahuetes', 'Cacahuetes'), $receta('Fruta con avena', 'Avena')]]);
+        };
+
+        $resultado = rellenarSemanaConIA(self::$pdo, self::LAURA, ['Merienda'], 2, false, '', $iaFalsa);
+        $this->assertSame(['recetas' => 1, 'comidas' => 7, 'sin_hueco' => 0], $resultado);
+        $this->assertCount(1, $prompts, 'Una sola llamada a la IA para toda la semana');
+        $this->assertStringContainsString('Cacahuete', $prompts[0]);
+        $this->assertSame($antes + 7, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan) WHERE ps.id_usuario = ?", [self::LAURA]));
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM receta WHERE titulo LIKE '%cacahuete%'"), 'La receta con alérgeno no se guarda');
+        // Lo que ya estaba planificado no se toca
+        $this->assertSame(1, (int) $this->valor("SELECT id_receta FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan) WHERE ps.id_usuario = ? AND dia_semana = 0 AND momento_comida = 'Desayuno'", [self::LAURA]));
+
+        $this->assertArrayHasKey('error', rellenarSemanaConIA(self::$pdo, self::LAURA, ['Merienda'], 2, false, '', $iaFalsa), 'Ya no quedan huecos');
+        $this->assertArrayHasKey('error', rellenarSemanaConIA(self::$pdo, self::LAURA, ['Cena'], 2, false, '', fn() => 'basura'));
+    }
+
+    public function testCadaSemanaTieneSuPropioPlan(): void
+    {
+        $esta = lunesDe();
+        $siguiente = semanaRelativa($esta, 1);
+        $this->assertTrue(asignarRecetaAlPlan(self::$pdo, self::LAURA, 2, 0, 'Merienda', $siguiente));
+        $this->assertNotSame(obtenerPlan(self::$pdo, self::LAURA, $esta), obtenerPlan(self::$pdo, self::LAURA, $siguiente));
+        $this->assertSame(obtenerPlan(self::$pdo, self::LAURA, $siguiente), obtenerOCrearPlan(self::$pdo, self::LAURA, $siguiente), 'No duplica el plan');
+        // La merienda del lunes que viene no aparece en esta semana
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
+                                                  WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.momento_comida = 'Merienda'", [self::LAURA, $esta]));
+        $this->assertSame(0, count(huecosLibres(self::$pdo, self::LAURA, ['Merienda'], $siguiente)) - 6);
+    }
+
+    public function testCopiarLaSemanaSoloRellenaHuecos(): void
+    {
+        $esta = lunesDe();
+        $siguiente = semanaRelativa($esta, 1);
+        // En la semana siguiente ya hay algo el lunes en el desayuno: se respeta
+        asignarRecetaAlPlan(self::$pdo, self::LAURA, 3, 0, 'Desayuno', $siguiente);
+
+        $copiadas = copiarSemana(self::$pdo, self::LAURA, $esta, $siguiente);
+        $this->assertSame(18, $copiadas, '19 comidas de esta semana menos el hueco ya ocupado');
+        $this->assertSame(3, (int) $this->valor("SELECT id_receta FROM comida_planificada WHERE id_plan = ? AND dia_semana = 0 AND momento_comida = 'Desayuno'",
+            [obtenerPlan(self::$pdo, self::LAURA, $siguiente)]));
+        $this->assertSame(0, copiarSemana(self::$pdo, self::LAURA, $esta, $siguiente), 'Copiar otra vez no duplica');
+        $this->assertSame(0, copiarSemana(self::$pdo, self::MARCOS, $esta, $siguiente), 'Sin plan de origen no copia nada');
+    }
+
+    public function testSoloSeMarcaHechaLaComidaDeLaSemanaDeEseDia(): void
+    {
+        $lunesPasado = semanaRelativa(lunesDe(), -1);
+        $idComida = (int) $this->valor("SELECT cp.id_comida_planificada FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
+                                         WHERE ps.fecha_inicio_semana = ? AND cp.dia_semana = 0 AND cp.momento_comida = 'Cena'", [$lunesPasado]);
+        $this->assertNotNull(registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $lunesPasado));
+        // El mismo lunes pero de esta semana no es esa comida
+        $this->assertNull(registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, lunesDe()));
+    }
+
+    public function testLaMigracionDeSemanasJuntaLosPlanesAntiguos(): void
+    {
+        // Como antes: un plan viejo con otra fecha y otro plan suelto con comidas
+        self::$pdo->exec("DELETE FROM plan_semanal WHERE id_plan = 2");
+        self::$pdo->exec("UPDATE plan_semanal SET fecha_inicio_semana = '2025-01-06' WHERE id_plan = 1");
+        self::$pdo->exec("INSERT INTO plan_semanal (id_plan, id_usuario, fecha_inicio_semana) VALUES (9, 3, '2025-03-03')");
+        self::$pdo->exec("INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida) VALUES (9, 2, 6, 'Merienda')");
+        self::$pdo->exec("DELETE FROM migraciones WHERE nombre = '004_un_plan_por_semana.sql'");
+
+        $this->assertSame(['004_un_plan_por_semana.sql'], aplicarMigracionesPendientes(self::$pdo));
+        $this->assertSame(1, (int) $this->valor("SELECT COUNT(*) FROM plan_semanal WHERE id_usuario = ?", [self::LAURA]));
+        $this->assertSame(1, obtenerPlan(self::$pdo, self::LAURA, lunesDe()), 'El plan pasa a ser el de esta semana');
+        $this->assertSame(20, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada WHERE id_plan = 1"), 'No se pierde ninguna comida');
+    }
+
+    public function testExportarLosDatosDeLaCuentaSinLaContrasena(): void
+    {
+        $datos = exportarDatosCuenta(self::$pdo, self::LAURA);
+        $this->assertSame('laura@kaloai.test', $datos['cuenta']['correo']);
+        $this->assertSame('Laura Martín', $datos['perfil']['nombre']);
+        $this->assertCount(3, $datos['recetas']);
+        $this->assertNotEmpty($datos['recetas'][0]['ingredientes']);
+        $this->assertCount(2, $datos['planes_semanales'], 'Esta semana y la pasada');
+        $this->assertNotEmpty($datos['comidas_registradas']);
+        $this->assertCount(2, $datos['alergias_y_preferencias']);
+        $json = json_encode($datos);
+        $this->assertStringNotContainsString('contrasena', $json);
+        $this->assertStringNotContainsString('$2y$', $json, 'Ningún hash de contraseña');
+    }
+
+    public function testBorrarLaCuentaBorraTodosSusDatos(): void
+    {
+        $this->assertTrue(borrarCuenta(self::$pdo, self::LAURA, 'baja de prueba'));
+        foreach (['usuario', 'perfil', 'receta' => 'id_usuario_creador', 'plan_semanal', 'registro_comida', 'progreso', 'inventario', 'ingrediente_prohibido'] as $tabla => $columna) {
+            if (is_int($tabla)) { $tabla = $columna; $columna = 'id_usuario'; }
+            $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM $tabla WHERE $columna = ?", [self::LAURA]), $tabla);
+        }
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada"), 'Sus comidas planificadas también');
+        $this->assertSame('baja de prueba', $this->valor("SELECT detalle FROM logs_actividad ORDER BY id_log DESC LIMIT 1"));
+        $this->assertFalse(borrarCuenta(self::$pdo, self::LAURA, 'otra vez'), 'Ya no existe');
+    }
+
+    public function testNoSePuedeBorrarElUltimoAdministrador(): void
+    {
+        $this->assertTrue(esUltimoAdministrador(self::$pdo, 1));
+        $this->assertFalse(esUltimoAdministrador(self::$pdo, self::LAURA), 'No es administradora');
+        self::$pdo->exec("UPDATE usuario SET id_rol = 1 WHERE id_usuario = 2");
+        $this->assertFalse(esUltimoAdministrador(self::$pdo, 1), 'Hay otra cuenta de administración');
+    }
+
+    private function pedirEnlace(string $correo, array &$correos): bool
+    {
+        return solicitarRestablecimiento(self::$pdo, $correo, 'https://kaloai.test/', function ($url, $cab, $cuerpo) use (&$correos) {
+            $correos[] = json_decode($cuerpo, true);
+            return [200, '{}'];
+        });
+    }
+
+    public function testRecuperarLaContrasenaDePrincipioAFin(): void
+    {
+        $correos = [];
+        $this->assertTrue($this->pedirEnlace('laura@kaloai.test', $correos));
+        $this->assertCount(1, $correos);
+        $this->assertSame(['laura@kaloai.test'], $correos[0]['to']);
+        $this->assertMatchesRegularExpression('#https://kaloai\.test/views/auth/restablecer\.php\?token=[a-f0-9]{64}#', $correos[0]['text']);
+        preg_match('/token=([a-f0-9]{64})/', $correos[0]['text'], $m);
+        $token = $m[1];
+
+        // En la base de datos solo está el hash
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM restablecimiento_contrasena WHERE token_hash = ?", [$token]));
+        $this->assertSame(self::LAURA, usuarioDelToken(self::$pdo, $token));
+
+        $this->assertTrue(restablecerContrasena(self::$pdo, $token, 'nuevaClave123'));
+        $this->assertTrue(password_verify('nuevaClave123', $this->valor("SELECT contrasena_hash FROM usuario WHERE id_usuario = ?", [self::LAURA])));
+        $this->assertNull(usuarioDelToken(self::$pdo, $token), 'Solo sirve una vez');
+        $this->assertFalse(restablecerContrasena(self::$pdo, $token, 'otraClave123'));
+    }
+
+    public function testElEnlaceCaducaYNoSeRevelaSiElCorreoExiste(): void
+    {
+        $correos = [];
+        $this->assertFalse($this->pedirEnlace('nadie@kaloai.test', $correos), 'Correo sin cuenta');
+        self::$pdo->exec("UPDATE usuario SET activo = 0 WHERE id_usuario = 4");
+        $this->assertFalse($this->pedirEnlace('marcos@kaloai.test', $correos), 'Cuenta bloqueada');
+        $this->assertCount(0, $correos);
+
+        $this->pedirEnlace('laura@kaloai.test', $correos);
+        preg_match('/token=([a-f0-9]{64})/', $correos[0]['text'], $m);
+        self::$pdo->exec("UPDATE restablecimiento_contrasena SET expira = DATE_SUB(NOW(), INTERVAL 1 MINUTE)");
+        $this->assertNull(usuarioDelToken(self::$pdo, $m[1]), 'Caducado');
+        $this->assertNull(usuarioDelToken(self::$pdo, 'no-es-un-token'));
+    }
+
+    public function testComoMuchoTresEnlacesPorHora(): void
+    {
+        $correos = [];
+        for ($i = 0; $i < 3; $i++) $this->assertTrue($this->pedirEnlace('laura@kaloai.test', $correos));
+        $this->assertFalse($this->pedirEnlace('laura@kaloai.test', $correos));
+        $this->assertCount(3, $correos);
+    }
+
+    public function testFavoritasSoloDeLasRecetasPropias(): void
+    {
+        $this->assertFalse(alternarFavorita(self::$pdo, self::LAURA, 1), 'El porridge era favorita: se desmarca');
+        $this->assertTrue(alternarFavorita(self::$pdo, self::LAURA, 1));
+        $this->assertNull(alternarFavorita(self::$pdo, self::MARCOS, 2), 'No puede tocar recetas ajenas');
+        $this->assertSame(0, (int) $this->valor("SELECT favorita FROM receta WHERE id_receta = 2"));
+    }
+
+    public function testComensalesDelPerfil(): void
+    {
+        $this->assertSame(1, comensalesDe(self::$pdo, self::LAURA));
+        self::$pdo->exec("UPDATE perfil SET comensales = 4 WHERE id_usuario = 3");
+        $this->assertSame(4, comensalesDe(self::$pdo, self::LAURA));
+        $this->assertSame(1, comensalesDe(self::$pdo, 999), 'Sin perfil, una persona');
+    }
+
+    public function testSoloSuNutricionistaVeLaFichaYDejaNotas(): void
+    {
+        $this->assertTrue(esPacienteDe(self::$pdo, 2, self::LAURA));
+        $this->assertFalse(esPacienteDe(self::$pdo, 2, self::MARCOS), 'Marcos solo tiene una invitación pendiente');
+        $this->assertNotNull(crearNota(self::$pdo, 2, self::MARCOS, 'Hola'), 'No puede escribir a quien no es su paciente');
+        $this->assertNotNull(crearNota(self::$pdo, 2, self::LAURA, '   '), 'Nota vacía');
+        $this->assertNull(crearNota(self::$pdo, 2, self::LAURA, "Bebe más agua.\r\nY camina."));
+
+        $notas = notasDelPaciente(self::$pdo, self::LAURA);
+        $this->assertSame("Bebe más agua.\nY camina.", $notas[0]['texto']);
+        $this->assertSame('Nuria Nutri', $notas[0]['autor']);
+        $this->assertSame(2, (int) $this->valor("SELECT COUNT(*) FROM nota_paciente WHERE id_paciente = 3 AND leida = 0"));
+        marcarNotasLeidas(self::$pdo, self::LAURA);
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM nota_paciente WHERE leida = 0"));
+
+        $this->assertFalse(borrarNota(self::$pdo, 1, (int) $notas[0]['id_nota']), 'Solo quien la escribió la borra');
+        $this->assertTrue(borrarNota(self::$pdo, 2, (int) $notas[0]['id_nota']));
+    }
+
+    public function testDatosDeLaFicha(): void
+    {
+        $d = datosSeguimiento(self::$pdo, self::LAURA);
+        $this->assertSame('Laura Martín', $d['perfil']['nombre']);
+        $this->assertCount(5, $d['progreso']);
+        $this->assertCount(14, $d['consumo']['dias']);
+        $this->assertGreaterThan(0, $d['consumo']['con_registro']);
+        $this->assertSame(19, $d['comidasPlan']);
+        $this->assertCount(8, $d['recientes']);
+        $this->assertCount(2, $d['restricciones']);
+    }
+
+    public function testElMensajeDeContactoSeGuardaYAvisaPorCorreo(): void
+    {
+        $correos = [];
+        $id = guardarContacto(self::$pdo, validarContacto(['nombre' => 'Ana <b>', 'email' => 'ana@ejemplo.test', 'mensaje' => 'Quiero usar KaloAI con mis pacientes.']), null,
+            function ($url, $cab, $cuerpo) use (&$correos) { $correos[] = json_decode($cuerpo, true); return [200, '{}']; });
+        $this->assertSame('Ana <b>', $this->valor("SELECT nombre FROM mensaje_contacto WHERE id_mensaje = ?", [$id]));
+        $this->assertSame(0, (int) $this->valor("SELECT leido FROM mensaje_contacto WHERE id_mensaje = ?", [$id]));
+        $this->assertCount(1, $correos);
+        $this->assertStringContainsString('Ana &lt;b&gt;', $correos[0]['html'], 'El nombre va escapado en el correo');
     }
 }

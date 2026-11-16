@@ -33,11 +33,15 @@ $sqlNecesario = "SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unid
                  FROM comida_planificada cp
                  JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
                  JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                 WHERE ps.id_usuario = ?";
+                 WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?";
 
 $stmtNec = $pdo->prepare($sqlNecesario);
-$stmtNec->execute([$userId]);
-$necesariosRaw = $stmtNec->fetchAll();
+// Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
+$semana = semanaValida($_GET['semana'] ?? null);
+$stmtNec->execute([$userId, $semana]);
+// Cada comida se cocina para toda la casa (perfil: «¿Para cuántas personas cocinas?»)
+$comensales = comensalesDe($pdo, (int) $userId);
+$necesariosRaw = multiplicarRaciones($stmtNec->fetchAll(), $comensales);
 
 // Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
 // sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.
@@ -64,21 +68,26 @@ $html = '
     .qty { float: right; font-weight: bold; background: #f3f4f6; padding: 4px 10px; border-radius: 5px; }
     .cb { display: inline-block; width: 16px; height: 16px; border: 2px solid #0d9488; margin-right: 12px; vertical-align: middle; border-radius: 3px; }
     .name { vertical-align: middle; font-weight: 600; font-size: 14px; }
+    .seccion { margin: 16px 0 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #0d9488; }
 </style>
 </head>
 <body>
     <div class="header">
         <h1>Compra KaloAI</h1>
-        <p>Generada el ' . date('d/m/Y') . '</p>
+        <p>' . htmlspecialchars(nombreSemana($semana), ENT_QUOTES, 'UTF-8') . ' (semana del ' . date('d/m', strtotime($semana)) . ') · generada el ' . date('d/m/Y') . '</p>
     </div>';
 
-foreach ($listaCompra as $item) {
-    $html .= '
+// Agrupada por secciones del súper (los emojis no se ven bien en el PDF: solo el nombre)
+foreach (agruparPorSeccion($listaCompra) as $seccion => $productos) {
+    $html .= '<div class="seccion">' . htmlspecialchars($seccion) . '</div>';
+    foreach ($productos as $item) {
+        $html .= '
     <div class="item">
         <span class="cb"></span>
         <span class="name">' . htmlspecialchars($item['nombre']) . '</span>
         <span class="qty">' . (float)round($item['comprar'], 2) . ' ' . e($item['unidad']) . '</span>
     </div>';
+    }
 }
 
 $html .= '</body></html>';

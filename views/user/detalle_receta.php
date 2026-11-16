@@ -51,9 +51,10 @@ $stmtInv->execute([$_SESSION['user_id']]);
 $enDespensa = array_flip(array_map(fn($n) => claveProducto((string) $n), $stmtInv->fetchAll(PDO::FETCH_COLUMN)));
 $tengoIngrediente = fn(array $ing) => isset($enDespensa[claveProducto((string) $ing['nombre_ingrediente'])]);
 $ingredientesEnCasa = count(array_filter($ingredientes, $tengoIngrediente));
-$stmtVeces = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? AND cp.id_receta = ?");
-$stmtVeces->execute([$_SESSION['user_id'], $recetaId]);
+$stmtVeces = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.id_receta = ?");
+$stmtVeces->execute([$_SESSION['user_id'], lunesDe(), $recetaId]);
 $vecesEnPlan = (int) $stmtVeces->fetchColumn();
+$comensales = comensalesDe($pdo, (int) $_SESSION['user_id']);
 $stmtObj = $pdo->prepare("SELECT calorias_netas_objetivo, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g FROM perfil WHERE id_usuario = ?");
 $stmtObj->execute([$_SESSION['user_id']]);
 $objetivos = $stmtObj->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -90,21 +91,31 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
             </div>
         </div>
         <div class="flex gap-2">
+            <button type="button" onclick="alternarFavorita(this)" data-receta="<?= (int) $receta['id_receta'] ?>" data-titulo="<?= e($receta['titulo']) ?>"
+                    class="k-btn k-btn-secondary k-btn-icon k-fav" aria-pressed="<?= !empty($receta['favorita']) ? 'true' : 'false' ?>"
+                    aria-label="<?= !empty($receta['favorita']) ? 'Quitar de favoritas' : 'Añadir a favoritas' ?>: <?= e($receta['titulo']) ?>"><?= icono('heart') ?></button>
             <a href="editar_receta.php?id=<?= (int) $receta['id_receta'] ?>" class="k-btn k-btn-secondary"><?= icono('pencil') ?>Editar</a>
             <button type="button" onclick="abrirModalEliminar(<?= (int) $receta['id_receta'] ?>)" class="k-btn k-btn-ghost k-btn-danger-text"><?= icono('trash') ?>Eliminar</button>
         </div>
     </div>
 
     <?php if (!empty($_SESSION['mensaje'])): ?>
-        <div class="k-alert k-alert-ok mb-6"><?= icono('check') ?><p><?= e($_SESSION['mensaje']) ?></p></div>
-        <?php unset($_SESSION['mensaje']); ?>
+        <?php $esError = ($_SESSION['mensaje_tipo'] ?? '') === 'error'; ?>
+        <div class="k-alert k-alert-<?= $esError ? 'error' : 'ok' ?> mb-6"><?= icono($esError ? 'alert' : 'check') ?><p><?= e($_SESSION['mensaje']) ?></p></div>
+        <?php unset($_SESSION['mensaje'], $_SESSION['mensaje_tipo']); ?>
     <?php endif; ?>
 
     <div class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-6 lg:col-span-2">
             <!-- INGREDIENTES -->
             <section class="k-card">
-                <div class="k-card-head"><h2 class="k-section-title">Ingredientes</h2><?php if ($ingredientes): ?><span class="k-badge <?= $ingredientesEnCasa === count($ingredientes) ? 'k-badge-ok' : '' ?>"><?= icono('package', 'h-3.5 w-3.5') ?><?= $ingredientesEnCasa ?> de <?= count($ingredientes) ?> en tu despensa</span><?php endif; ?></div>
+                <div class="k-card-head flex-wrap gap-3"><h2 class="k-section-title">Ingredientes</h2>
+                    <!-- Cantidades para varias personas (solo cambia lo que se ve) -->
+                    <div class="flex items-center gap-1 text-sm" aria-label="Número de personas">
+                        <button type="button" onclick="cambiarPersonasReceta(-1)" class="k-btn k-btn-ghost k-btn-icon h-8 w-8" aria-label="Una persona menos"><?= icono('minus', 'h-4 w-4') ?></button>
+                        <span class="min-w-[5.5rem] text-center k-strong" aria-live="polite"><span id="personasReceta"><?= (int) $comensales ?></span> <span id="personasTexto"><?= $comensales === 1 ? 'persona' : 'personas' ?></span></span>
+                        <button type="button" onclick="cambiarPersonasReceta(1)" class="k-btn k-btn-ghost k-btn-icon h-8 w-8" aria-label="Una persona más"><?= icono('plus', 'h-4 w-4') ?></button>
+                    </div><?php if ($ingredientes): ?><span class="k-badge <?= $ingredientesEnCasa === count($ingredientes) ? 'k-badge-ok' : '' ?>"><?= icono('package', 'h-3.5 w-3.5') ?><?= $ingredientesEnCasa ?> de <?= count($ingredientes) ?> en tu despensa</span><?php endif; ?></div>
                 <?php if ($ingredientes): ?>
                     <ul class="k-list">
                         <?php foreach ($ingredientes as $ing):
@@ -118,8 +129,8 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
                                     <?php endif; ?>
                                     <?= e($ing['nombre_ingrediente']) ?>
                                 </span>
-                                <span class="shrink-0 tabular-nums k-muted">
-                                    <?= $cantidad > 0 ? e(rtrim(rtrim(number_format($cantidad, 2, ',', '.'), '0'), ',')) . ' ' . e($ing['unidad']) : '' ?>
+                                <span class="shrink-0 tabular-nums k-muted" data-cantidad="<?= e($cantidad) ?>" data-unidad="<?= e($ing['unidad']) ?>">
+                                    <?= $cantidad > 0 ? e(rtrim(rtrim(number_format($cantidad * $comensales, 2, ',', '.'), '0'), ',')) . ' ' . e($ing['unidad']) : '' ?>
                                 </span>
                             </li>
                         <?php endforeach; ?>
@@ -182,9 +193,54 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
                     </ul>
                 </div>
             <?php endif; ?>
-            <a href="planificacion_semanal.php" class="k-btn k-btn-secondary mt-6 w-full"><?= icono('calendar') ?>Ir al plan semanal</a>
+            <button type="button" onclick="abrirModal('modalAnadirPlan')" class="k-btn k-btn-primary mt-6 w-full"><?= icono('calendar') ?>Añadir al plan</button>
         </aside>
     </div>
+</div>
+
+<?php
+// Momento propuesto según el tipo de receta, y hoy como día por defecto
+$momentoPropuesto = ['desayuno' => 'Desayuno', 'almuerzo' => 'Almuerzo', 'cena' => 'Cena', 'snack' => 'Merienda'][$estilo['filtro']] ?? 'Almuerzo';
+$hoyNumero = (int) date('N') - 1;
+?>
+<!-- MODAL: AÑADIR AL PLAN -->
+<div id="modalAnadirPlan" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloAnadirPlan">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="anadir_al_plan.php" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="id_receta" value="<?= (int) $receta['id_receta'] ?>">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloAnadirPlan" class="k-modal-title">Añadir al plan</h2>
+        <p class="mt-1 text-sm k-muted">Si en ese hueco ya hay una comida, se sustituye.</p>
+        <div class="mt-5 space-y-4">
+            <div>
+                <label for="planSemana" class="k-label">Semana</label>
+                <select id="planSemana" name="semana" class="k-input">
+                    <?php foreach ([lunesDe(), semanaRelativa(lunesDe(), 1)] as $opcion): ?>
+                        <option value="<?= $opcion ?>"><?= e(nombreSemana($opcion)) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="planDia" class="k-label">Día</label>
+                    <select id="planDia" name="dia" class="k-input">
+                        <?php foreach (DIAS_SEMANA as $n => $dia): ?><option value="<?= $n ?>" <?= $n === $hoyNumero ? 'selected' : '' ?>><?= e($dia) ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label for="planMomento" class="k-label">Comida</label>
+                    <select id="planMomento" name="momento" class="k-input">
+                        <?php foreach (MOMENTOS_COMIDA as $m): ?><option value="<?= e($m) ?>" <?= $m === $momentoPropuesto ? 'selected' : '' ?>><?= e($m) ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-primary"><?= icono('check') ?>Añadir</button>
+        </div>
+    </form>
 </div>
 
 <!-- MODAL: ELIMINAR RECETA -->

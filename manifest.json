@@ -1,0 +1,23 @@
+{
+  "name": "KaloAI · Planificación alimentaria con IA",
+  "short_name": "KaloAI",
+  "description": "Tu plan de comidas semanal, recetas con IA, despensa y lista de la compra.",
+  "lang": "es",
+  "start_url": "./views/dashboard.php?app=1",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c0c0e",
+  "theme_color": "#0c0c0e",
+  "categories": ["food", "health", "lifestyle"],
+  "icons": [
+    { "src": "public/icons/icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "public/icons/icono-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "public/icons/icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Hoy", "url": "./views/dashboard.php", "icons": [{ "src": "public/icons/icono-192.png", "sizes": "192x192" }] },
+    { "name": "Plan semanal", "url": "./views/user/planificacion_semanal.php", "icons": [{ "src": "public/icons/icono-192.png", "sizes": "192x192" }] },
+    { "name": "Lista de la compra", "url": "./views/user/lista_compra.php", "icons": [{ "src": "public/icons/icono-192.png", "sizes": "192x192" }] }
+  ]
+}

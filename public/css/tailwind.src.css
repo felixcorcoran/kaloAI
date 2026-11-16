@@ -137,6 +137,9 @@
     }
     .k-card-pad { @apply p-5 sm:p-6; }
     .k-card-head { @apply flex items-center justify-between gap-3 border-b px-5 py-4 sm:px-6; border-color: var(--k-border); }
+    /* Dentro de una rejilla, una tarjeta nunca se ensancha por un texto largo
+       (sin esto, un título truncado en móvil hacía la página más ancha que la pantalla) */
+    .grid > .k-card, .grid > section, .grid > aside { min-width: 0; }
     .k-card-link { @apply transition duration-200; }
     .k-card-link:hover { border-color: var(--k-border-strong); background-color: color-mix(in srgb, var(--k-surface) 92%, var(--k-text)); }
     .k-divider { @apply border-t; border-color: var(--k-border); }
@@ -172,6 +175,11 @@
     .k-btn-icon svg { @apply h-[18px] w-[18px]; }
     .k-btn-icon.k-btn-danger-text:hover { background-color: var(--k-danger-soft); color: var(--k-danger); }
     .k-btn-danger-text:not(.k-btn-icon) { color: var(--k-danger); }
+    /* Corazón de favorita: hueco o relleno según aria-pressed */
+    .k-fav { color: var(--k-muted); }
+    .k-fav:hover { color: var(--k-fat); }
+    .k-fav[aria-pressed="true"] { color: var(--k-fat); }
+    .k-fav[aria-pressed="true"] svg { fill: currentColor; }
     .k-btn-danger-text:not(.k-btn-icon):hover { background-color: var(--k-danger-soft); }
 
     /* ---------- Formularios ---------- */
@@ -205,9 +213,9 @@
 
     /* Control segmentado (filtros, pestañas): botones con aria-pressed */
     .k-seg { @apply inline-flex flex-wrap gap-1 rounded-full border p-1; background-color: var(--k-surface); border-color: var(--k-border); }
-    .k-seg > button { @apply inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition; color: var(--k-muted); }
-    .k-seg > button:hover { color: var(--k-text); }
-    .k-seg > button[aria-pressed="true"] { background-color: var(--k-surface-3); color: var(--k-text); }
+    .k-seg > :is(button, a) { @apply inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition; color: var(--k-muted); }
+    .k-seg > :is(button, a):hover { color: var(--k-text); }
+    .k-seg > button[aria-pressed="true"], .k-seg > a[aria-current="page"] { background-color: var(--k-surface-3); color: var(--k-text); }
 
     /* ---------- Etiquetas de estado (borde de color, como "Active"/"Paused") ---------- */
     .k-badge {
@@ -286,7 +294,7 @@
     .k-modal { @apply fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center; }
     .k-modal-backdrop { @apply absolute inset-0 bg-black/60 backdrop-blur-sm; animation: k-fade 0.15s ease-out; }
     .k-modal-panel {
-        @apply relative w-full max-w-md rounded-2xl border p-6;
+        @apply relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border p-6;
         background-color: var(--k-surface);
         border-color: var(--k-border-strong);
         box-shadow: var(--k-shadow-lg);

@@ -87,6 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pesoKg = filter_var($_POST['peso_kg'] ?? '', FILTER_VALIDATE_FLOAT);
     $nivelActividad = limpiarInput($_POST['nivel_actividad'] ?? '');
     $objetivo = limpiarInput($_POST['objetivo'] ?? ''); 
+    // Para cuántas personas cocina (solo cambia las cantidades de la lista de la compra)
+    $comensales = max(1, min(12, (int) ($_POST['comensales'] ?? 1)));
     
     // Decodificación de restricciones enviadas vía JSON desde el frontend
     $restriccionesJson = $_POST['restricciones_json'] ?? '[]';
@@ -165,10 +167,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $params = [
                 $nombre, $fechaNacimiento, $genero, $alturaCm, $pesoKg, $nivelActividad, $objetivo, 
-                $tdeeCalorias, $proteinasObjetivo, $carbohidratosObjetivo, $grasasObjetivo, $caloriasNetasObjetivo, 
+                $tdeeCalorias, $proteinasObjetivo, $carbohidratosObjetivo, $grasasObjetivo, $caloriasNetasObjetivo, $comensales,
             ];
 
-            $sqlSet = "nombre = ?, fecha_nacimiento = ?, genero = ?, altura_cm = ?, peso_kg = ?, nivel_actividad = ?, objetivo = ?, tdee_calorias = ?, proteinas_objetivo_g = ?, carbohidratos_objetivo_g = ?, grasas_objetivo_g = ?, calorias_netas_objetivo = ?";
+            $sqlSet = "nombre = ?, fecha_nacimiento = ?, genero = ?, altura_cm = ?, peso_kg = ?, nivel_actividad = ?, objetivo = ?, tdee_calorias = ?, proteinas_objetivo_g = ?, carbohidratos_objetivo_g = ?, grasas_objetivo_g = ?, calorias_netas_objetivo = ?, comensales = ?";
             
             if ($profileExists) {
                 $sql = "UPDATE perfil SET {$sqlSet} WHERE id_usuario = ?";
@@ -176,8 +178,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
             } else {
-                $cols = "id_usuario, nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo";
-                $placeholders = implode(', ', array_fill(0, 13, '?'));
+                $cols = "id_usuario, nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo, comensales";
+                $placeholders = implode(', ', array_fill(0, 14, '?'));
                 $sql = "INSERT INTO perfil ({$cols}) VALUES ({$placeholders})";
                 array_unshift($params, $userId); 
                 $stmt = $pdo->prepare($sql);
@@ -218,6 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'carbohidratos_objetivo_g' => $carbohidratosObjetivo,
                 'grasas_objetivo_g' => $grasasObjetivo,
                 'calorias_netas_objetivo' => $caloriasNetasObjetivo,
+                'comensales' => $comensales,
             ];
             $currentRestrictions = $restriccionesArray;
 
@@ -236,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $profileData = array_merge($profileData, [
             'nombre' => $nombre, 'fecha_nacimiento' => $fechaNacimiento, 'genero' => $genero, 
             'altura_cm' => $alturaCm, 'peso_kg' => $pesoKg, 'nivel_actividad' => $nivelActividad,
-            'objetivo' => $objetivo, 
+            'objetivo' => $objetivo, 'comensales' => $comensales,
         ]);
     }
 }
@@ -250,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'GET' || !empty($errors)) {
     try {
         // Carga de metadatos del perfil
-        $stmt = $pdo->prepare("SELECT nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo FROM perfil WHERE id_usuario = ?");
+        $stmt = $pdo->prepare("SELECT nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo, comensales FROM perfil WHERE id_usuario = ?");
         $stmt->execute([$userId]);
         $fetchedData = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -313,6 +316,12 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
     </div>
     <p class="k-subtitle -mt-2 mb-6">Con estos datos KaloAI calcula tus calorías y macros diarios, y la IA evita lo que no puedes comer.</p>
 
+    <?php if (isset($_GET['bienvenida']) && !$message): ?>
+        <div class="k-alert k-alert-ok mb-6" role="status">
+            <?= icono('sparkles') ?>
+            <p><strong>¡Te damos la bienvenida a KaloAI!</strong> Completa estos datos y calcularemos tus calorías y macros. Después, la IA te prepara la semana.</p>
+        </div>
+    <?php endif; ?>
     <?php if ($message): ?>
         <div class="k-alert k-alert-<?= $messageType === 'success' ? (($profileData['tdee_calorias'] ?? 0) > 0 ? 'ok' : 'info') : 'error' ?> mb-6" role="alert">
             <?= icono($messageType === 'success' ? 'check' : 'alert') ?>
@@ -407,6 +416,15 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="sm:col-span-2">
+                    <label for="comensales" class="k-label">¿Para cuántas personas cocinas?</label>
+                    <select id="comensales" name="comensales" class="k-input sm:w-56">
+                        <?php for ($n = 1; $n <= 8; $n++): ?>
+                            <option value="<?= $n ?>" <?= (int) ($profileData['comensales'] ?? 1) === $n ? 'selected' : '' ?>><?= $n === 1 ? 'Solo para mí' : "$n personas" ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <p class="k-hint">La lista de la compra multiplica las cantidades. Tus calorías y macros siguen siendo los de tu ración.</p>
+                </div>
             </div>
         </section>
 
@@ -438,7 +456,61 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
             <button type="submit" class="k-btn k-btn-primary k-btn-lg"><?= icono('check') ?>Guardar y recalcular</button>
         </div>
     </form>
+
+    <?php if (empty($impersonando)):
+        $avisoCuenta = $_SESSION['aviso_cuenta'] ?? null;
+        unset($_SESSION['aviso_cuenta']); ?>
+        <!-- TU CUENTA: tus datos son tuyos -->
+        <section id="cuenta" class="k-card k-card-pad mt-10 scroll-mt-6">
+            <div class="flex items-start gap-3">
+                <span class="k-icon-tile k-tile-indigo"><?= icono('shield') ?></span>
+                <div>
+                    <h2 class="k-section-title">Tu cuenta</h2>
+                    <p class="mt-1 text-sm k-muted">Tus datos son tuyos: puedes llevártelos o borrarlos cuando quieras.</p>
+                </div>
+            </div>
+            <?php if ($avisoCuenta): [$tipoAviso, $textoAviso] = $avisoCuenta; ?>
+                <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mt-5" role="alert"><?= icono('alert') ?><p><?= e($textoAviso) ?></p></div>
+            <?php endif; ?>
+            <div class="mt-5 grid gap-3 sm:grid-cols-2">
+                <form method="POST" action="cuenta.php" class="k-subtle m-0 flex flex-col rounded-2xl p-4">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="accion" value="descargar">
+                    <p class="font-medium k-strong">Descargar mis datos</p>
+                    <p class="mt-1 flex-1 text-sm k-muted">Perfil, recetas, planes, comidas apuntadas, progreso y despensa en un archivo JSON.</p>
+                    <button type="submit" class="k-btn k-btn-secondary mt-4 self-start"><?= icono('download') ?>Descargar</button>
+                </form>
+                <div class="k-subtle flex flex-col rounded-2xl p-4">
+                    <p class="font-medium k-strong">Borrar mi cuenta</p>
+                    <p class="mt-1 flex-1 text-sm k-muted">Se borran tu cuenta y todos tus datos para siempre. No se puede deshacer.</p>
+                    <button type="button" onclick="abrirModal('modalBorrarCuenta')" class="k-btn k-btn-ghost k-btn-danger-text mt-4 self-start"><?= icono('trash') ?>Borrar mi cuenta</button>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
 </div>
+
+<?php if (empty($impersonando)): ?>
+<!-- MODAL: BORRAR LA CUENTA -->
+<div id="modalBorrarCuenta" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloBorrarCuenta">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="cuenta.php" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="accion" value="borrar">
+        <span class="k-icon-tile k-tile-danger"><?= icono('alert') ?></span>
+        <h2 id="tituloBorrarCuenta" class="k-modal-title mt-4">¿Borrar tu cuenta para siempre?</h2>
+        <p class="mt-2 text-sm k-muted">Se borrarán tu perfil, tus recetas, tus planes, lo que has apuntado, tu progreso y tu despensa. Si quieres conservarlos, descárgalos antes.</p>
+        <div class="mt-5">
+            <label for="contrasenaBorrar" class="k-label">Escribe tu contraseña para confirmarlo</label>
+            <input id="contrasenaBorrar" name="contrasena" type="password" required autocomplete="current-password" class="k-input" data-autofocus>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-danger">Borrar mi cuenta</button>
+        </div>
+    </form>
+</div>
+<?php endif; ?>
 
 <script>
     // Datos para la lista de restricciones (main.js)

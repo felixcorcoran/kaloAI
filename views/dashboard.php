@@ -12,6 +12,8 @@ session_start();
 require_once __DIR__ . '/../core/configuracion.php'; 
 require_once __DIR__ . '/../core/utilidades.php';
 require_once __DIR__ . '/../core/recetas.php';
+require_once __DIR__ . '/../core/registro.php';
+require_once __DIR__ . '/../core/seguimiento.php';
 
 // Validar que la sesión esté activa; de lo contrario, proteger la ruta
 if (!isset($_SESSION['user_id'])) {
@@ -125,11 +127,11 @@ try {
                 FROM comida_planificada cp
                 JOIN receta r ON cp.id_receta = r.id_receta
                 JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                WHERE ps.id_usuario = ? 
+                WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?
                 HAVING dia_nombre = ?"; 
 
     $stmtComidas = $pdo->prepare($sqlComidas);
-    $stmtComidas->execute([$userId, $diaHoyNombre]); 
+    $stmtComidas->execute([$userId, lunesDe(), $diaHoyNombre]); 
     $rows = $stmtComidas->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($rows as $row) {
@@ -169,24 +171,35 @@ $stmtSemana = $pdo->prepare("SELECT cp.dia_semana, SUM(r.calorias_por_racion * c
                              FROM comida_planificada cp
                              JOIN receta r ON cp.id_receta = r.id_receta
                              JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                             WHERE ps.id_usuario = ? GROUP BY cp.dia_semana");
-$stmtSemana->execute([$userId]);
+                             WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? GROUP BY cp.dia_semana");
+$stmtSemana->execute([$userId, lunesDe()]);
 foreach ($stmtSemana->fetchAll() as $fila) {
     $semana[(int) $fila['dia_semana']] = ['kcal' => (float) $fila['kcal'], 'comidas' => (int) $fila['comidas']];
 }
 $huecosPlanificados = array_sum(array_column($semana, 'comidas'));
+
+// Lo comido de verdad: hoy y cada día de esta semana (lunes a domingo)
+$registrosHoy = registrosDelDia($pdo, (int) $userId, date('Y-m-d'));
+$lunesSemana = new DateTimeImmutable('monday this week');
+$consumoSemanaPorFecha = caloriasConsumidasPorDia($pdo, (int) $userId, $lunesSemana->format('Y-m-d'), $lunesSemana->modify('+6 days')->format('Y-m-d'));
+$consumoSemana = [];
+for ($i = 0; $i < 7; $i++) {
+    $fechaDia = $lunesSemana->modify("+$i days")->format('Y-m-d');
+    // Los días que aún no han llegado no tienen consumo (null: no se dibujan)
+    $consumoSemana[] = $fechaDia > date('Y-m-d') ? null : round($consumoSemanaPorFecha[$fechaDia] ?? 0);
+}
 
 // Lista de la compra pendiente (misma lógica que lista_compra.php)
 $stmtNec = $pdo->prepare("SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unidad
                           FROM comida_planificada cp
                           JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
                           JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
-                          WHERE ps.id_usuario = ?");
-$stmtNec->execute([$userId]);
+                          WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+$stmtNec->execute([$userId, lunesDe()]);
 $stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
 $stmtInv->execute([$userId]);
 $inventario = $stmtInv->fetchAll();
-$pendientesCompra = calcularListaCompra($stmtNec->fetchAll(), $inventario);
+$pendientesCompra = calcularListaCompra(multiplicarRaciones($stmtNec->fetchAll(), comensalesDe($pdo, (int) $userId)), $inventario);
 
 $stmtRec = $pdo->prepare("SELECT COUNT(*) AS total, COALESCE(SUM(generado_ia), 0) AS ia FROM receta WHERE id_usuario_creador = ?");
 $stmtRec->execute([$userId]);
@@ -202,6 +215,12 @@ $stmtNutri = $pdo->prepare("SELECT pn.nombre, un.correo FROM perfil p
                             WHERE p.id_usuario = ?");
 $stmtNutri->execute([$userId]);
 $miNutricionista = $stmtNutri->fetch();
+
+// Notas del nutricionista: las nuevas se resaltan y, al verlas, quedan leídas
+// (en modo gestión no se marcan: las está viendo el nutricionista, no el paciente)
+$notasNutri = notasDelPaciente($pdo, (int) $userId, 3);
+$notasSinLeer = count(array_filter($notasNutri, fn($n) => !$n['leida']));
+if ($notasSinLeer && empty($_SESSION['is_impersonating'])) marcarNotasLeidas($pdo, (int) $userId);
 
 // Carga del componente de cabecera (antes de cualquier HTML: el <!DOCTYPE> va primero)
 include_once __DIR__ . '/templates/header.php';
@@ -225,10 +244,42 @@ foreach ($comidasHoy as $c) {
     $hoy['c'] += $c['carbohidratos_g_por_racion'] * $r;
     $hoy['g'] += $c['grasas_g_por_racion'] * $r;
 }
+$comido = sumarRegistros($registrosHoy);
+// Por momento: qué se ha registrado y si la comida planificada ya está hecha
+$registrosPorMomento = [];
+foreach ($registrosHoy as $r) $registrosPorMomento[$r['momento_comida']][] = $r;
+$planHecho = function (string $momento) use ($comidasHoy, $registrosPorMomento): ?array {
+    $plan = $comidasHoy[$momento] ?? null;
+    if (!$plan) return null;
+    foreach ($registrosPorMomento[$momento] ?? [] as $r) {
+        if ((int) $r['id_receta'] === (int) $plan['id_receta']) return $r;
+    }
+    return null;
+};
+$comidasHechas = count(array_filter(array_keys($comidasHoy), fn($m) => $planHecho($m) !== null));
+$avisoRegistro = $_SESSION['aviso_registro'] ?? null;
+$avisoPanel = $_SESSION['aviso_panel'] ?? null;
+
+// Primeros pasos (solo hasta que se completan los imprescindibles)
+$stmtPrimeros = $pdo->prepare("SELECT (SELECT COUNT(*) FROM registro_comida WHERE id_usuario = ?)");
+$stmtPrimeros->execute([$userId]);
+$haApuntado = (int) $stmtPrimeros->fetchColumn() > 0;
+$pasos = [
+    ['Completa tu perfil', 'Edad, altura, peso y objetivo: con ellos calculamos tus calorías.', 'user/perfil.php', 'user', $tienePerfil ?? false],
+    ['Marca lo que no puedes comer', 'Alergias e intolerancias: la IA nunca las usará.', 'user/perfil.php', 'ban', !empty($restricciones)],
+    ['Apunta lo que tienes en casa', 'La compra solo te pedirá lo que falta.', 'user/inventario.php', 'package', !empty($inventario)],
+    ['Planifica tu semana', 'Con «Rellenar con IA» en un minuto.', 'user/planificacion_semanal.php', 'calendar', $huecosPlanificados > 0],
+    ['Apunta lo que comes', 'Marca «Hecho» en tus comidas de hoy.', '#comidas', 'check', $haApuntado],
+];
+$pasosHechos = count(array_filter(array_column($pasos, 4)));
+$mostrarPrimerosPasos = !($pasos[0][4] && $pasos[3][4] && $pasos[4][4]);
+unset($_SESSION['aviso_panel']);
+unset($_SESSION['aviso_registro']);
 $metaKcal = (int) ($profileData['calorias_netas_objetivo'] ?? 0);
 $metas = ['p' => (int) ($profileData['proteinas_objetivo_g'] ?? 0), 'c' => (int) ($profileData['carbohidratos_objetivo_g'] ?? 0), 'g' => (int) ($profileData['grasas_objetivo_g'] ?? 0)];
-$pctKcal = $metaKcal > 0 ? (int) round($hoy['kcal'] / $metaKcal * 100) : 0;
-$restantes = $metaKcal - (int) round($hoy['kcal']);
+$pctKcal = $metaKcal > 0 ? (int) round($comido['kcal'] / $metaKcal * 100) : 0;
+$pctPlan = $metaKcal > 0 ? (int) round($hoy['kcal'] / $metaKcal * 100) : 0;
+$restantes = $metaKcal - (int) round($comido['kcal']);
 
 $pesos = array_values(array_filter($progresoData, fn($p) => $p['peso_kg'] !== null));
 $pesoActual = $pesos ? (float) end($pesos)['peso_kg'] : null;
@@ -281,12 +332,52 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
             <p class="k-subtitle">Así va tu día y tu semana.</p>
         </div>
         <div class="flex gap-2">
-            <a href="user/progreso.php" class="k-btn k-btn-secondary"><?= icono('activity') ?>Registrar peso</a>
+            <button type="button" onclick="abrirModal('modalPeso')" class="k-btn k-btn-secondary"><?= icono('activity') ?>Registrar peso</button>
             <a href="user/generar_receta.php" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Generar receta</a>
         </div>
     </div>
 
-    <?php if (!$tienePerfil): ?>
+    <?php if ($avisoPanel): [$tipoPanel, $textoPanel] = $avisoPanel; ?>
+        <div class="k-alert k-alert-<?= $tipoPanel === 'ok' ? 'ok' : 'error' ?> mb-6" role="status"><?= icono($tipoPanel === 'ok' ? 'check' : 'alert') ?><p><?= e($textoPanel) ?></p></div>
+    <?php endif; ?>
+
+    <?php if ($notasSinLeer): $nueva = $notasNutri[0]; ?>
+        <!-- NOTA NUEVA DEL NUTRICIONISTA -->
+        <div class="k-card k-card-pad mb-6 flex items-start gap-4" style="border-color: var(--k-brand-line);" role="status">
+            <span class="k-icon-tile k-tile-indigo"><?= icono('mail') ?></span>
+            <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium k-muted"><?= $notasSinLeer === 1 ? 'Nota nueva' : $notasSinLeer . ' notas nuevas' ?> de <?= e(explode(' ', $nueva['autor'])[0]) ?> · <?= e(formatearFecha($nueva['fecha'])) ?></p>
+                <p class="mt-1 whitespace-pre-line leading-relaxed k-strong"><?= e($nueva['texto']) ?></p>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($mostrarPrimerosPasos): ?>
+        <!-- PRIMEROS PASOS -->
+        <section class="k-card k-card-pad mb-6" aria-labelledby="tituloPrimerosPasos">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 id="tituloPrimerosPasos" class="k-section-title">Primeros pasos</h2>
+                    <p class="mt-0.5 text-sm k-muted">Cinco minutos y KaloAI empieza a trabajar para ti.</p>
+                </div>
+                <p class="text-sm tabular-nums k-muted"><span class="font-semibold k-strong"><?= $pasosHechos ?></span> de <?= count($pasos) ?></p>
+            </div>
+            <div class="k-track mt-3 h-1.5"><div class="k-bar" style="width: <?= round($pasosHechos / count($pasos) * 100) ?>%"></div></div>
+            <ol class="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <?php foreach ($pasos as $i => [$titulo, $texto, $url, $ic, $hecho]): ?>
+                    <li>
+                        <a href="<?= $url ?>" class="k-subtle flex h-full gap-3 rounded-2xl p-3.5 transition hover:ring-1 hover:ring-[color:var(--k-border-strong)] <?= $hecho ? 'opacity-60' : '' ?>">
+                            <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold" style="<?= $hecho ? 'background-color: var(--k-brand); color: var(--k-inverse-text);' : 'border: 1px solid var(--k-border-strong);' ?>"><?= $hecho ? icono('check', 'h-3.5 w-3.5') : $i + 1 ?></span>
+                            <span class="min-w-0">
+                                <span class="block text-sm font-medium k-strong <?= $hecho ? 'line-through decoration-1' : '' ?>"><?= $titulo ?></span>
+                                <span class="mt-0.5 block text-xs leading-snug k-muted"><?= $texto ?></span>
+                            </span>
+                        </a>
+                    </li>
+                <?php endforeach; ?>
+            </ol>
+        </section>
+    <?php elseif (!$tienePerfil): ?>
         <div class="k-alert k-alert-info mb-6 items-center">
             <?= icono('info') ?>
             <p class="flex-1">Completa tu perfil para que KaloAI calcule tus calorías y macros diarios.</p>
@@ -296,16 +387,20 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
 
     <!-- CIFRAS PRINCIPALES -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <!-- Calorías de hoy -->
-        <a href="user/planificacion_semanal.php" class="k-card k-card-link flex flex-col p-5">
-            <div class="flex items-center justify-between"><p class="k-stat-label">Calorías de hoy</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-orange"><?= icono('flame', 'h-4 w-4') ?></span></div>
+        <!-- Calorías de hoy: lo comido, con lo planificado como referencia -->
+        <a href="#comidas" class="k-card k-card-link flex flex-col p-5">
+            <div class="flex items-center justify-between"><p class="k-stat-label">Comido hoy</p><span class="k-icon-tile h-8 w-8 rounded-lg k-tile-orange"><?= icono('flame', 'h-4 w-4') ?></span></div>
             <div class="mt-3 flex items-baseline gap-2">
-                <p class="k-stat-value"><?= $entero($hoy['kcal']) ?></p>
+                <p class="k-stat-value"><?= $entero($comido['kcal']) ?></p>
                 <?php if ($tienePerfil): ?><span class="text-sm k-muted">/ <?= $entero($metaKcal) ?> kcal</span><?php endif; ?>
             </div>
             <div class="mt-auto pt-4">
-                <div class="k-track h-2"><div class="k-bar <?= $restantes < -$metaKcal * 0.1 ? 'k-bar-over' : '' ?>" style="width: <?= min(100, $pctKcal) ?>%"></div></div>
-                <p class="mt-2 text-xs k-muted"><?= !$tienePerfil ? 'Sin objetivo todavía' : ($restantes >= 0 ? 'Te quedan ' . $entero($restantes) . ' kcal' : 'Te pasas ' . $entero(-$restantes) . ' kcal') ?></p>
+                <!-- Barra: lo comido encima; la marca clara es lo planificado para hoy -->
+                <div class="k-track relative h-2" title="Planificado: <?= $entero($hoy['kcal']) ?> kcal">
+                    <?php if ($pctPlan > 0): ?><div class="absolute inset-y-0 left-0 rounded-full" style="width: <?= min(100, $pctPlan) ?>%; background-color: var(--k-brand-soft);"></div><?php endif; ?>
+                    <div class="k-bar relative <?= $restantes < -$metaKcal * 0.1 ? 'k-bar-over' : '' ?>" style="width: <?= min(100, $pctKcal) ?>%"></div>
+                </div>
+                <p class="mt-2 text-xs k-muted"><?= !$tienePerfil ? 'Sin objetivo todavía' : ($restantes >= 0 ? 'Te quedan ' . $entero($restantes) . ' kcal' : 'Te pasas ' . $entero(-$restantes) . ' kcal') ?> · <?= $entero($hoy['kcal']) ?> planificadas</p>
             </div>
         </a>
 
@@ -353,13 +448,20 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
         </a>
     </div>
 
+    <!-- En móvil, las comidas de hoy (lo que más se usa) van antes que las gráficas -->
+    <div class="flex flex-col">
     <!-- SEMANA Y MACROS -->
     <div class="mt-4 grid gap-4 lg:grid-cols-3">
         <section class="k-card k-card-pad flex flex-col lg:col-span-2">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h2 class="k-section-title">Calorías de la semana</h2>
-                    <p class="mt-0.5 text-sm k-muted">Lo planificado cada día<?= $tienePerfil ? ' frente a tu objetivo de ' . $entero($metaKcal) . ' kcal' : '' ?>.</p>
+                    <p class="mt-0.5 text-sm k-muted">Lo planificado y lo comido cada día<?= $tienePerfil ? ' frente a tu objetivo de ' . $entero($metaKcal) . ' kcal' : '' ?>.</p>
+                    <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs k-muted">
+                        <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm" style="background-color: var(--k-indigo);"></span>Planificado</span>
+                        <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm" style="background-color: var(--k-brand);"></span>Comido</span>
+                        <?php if ($tienePerfil): ?><span class="flex items-center gap-1.5"><span class="w-3 border-t-2 border-dashed" style="border-color: var(--k-muted);"></span>Objetivo</span><?php endif; ?>
+                    </div>
                 </div>
                 <div class="text-right">
                     <p class="font-display text-xl font-semibold tabular-nums k-strong"><?= $entero($mediaSemana) ?> <span class="text-sm font-normal k-muted">kcal/día</span></p>
@@ -371,11 +473,11 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
 
         <section class="k-card k-card-pad flex flex-col">
             <h2 class="k-section-title">Macros de hoy</h2>
-            <p class="mt-0.5 text-sm k-muted">Planificado frente a objetivo.</p>
+            <p class="mt-0.5 text-sm k-muted">Lo que has comido frente a tu objetivo.</p>
             <div class="relative mx-auto mt-4 h-44 w-44">
                 <canvas id="macrosChart" class="absolute inset-0" aria-label="Reparto de macronutrientes de hoy"></canvas>
                 <div class="pointer-events-none absolute inset-0 grid place-items-center text-center">
-                    <div><p class="font-display text-2xl font-semibold tabular-nums k-strong"><?= $entero($hoy['kcal']) ?></p><p class="text-xs k-muted">kcal</p></div>
+                    <div><p class="font-display text-2xl font-semibold tabular-nums k-strong"><?= $entero($comido['kcal']) ?></p><p class="text-xs k-muted">kcal comidas</p></div>
                 </div>
             </div>
             <ul class="mt-auto space-y-3 pt-5">
@@ -383,9 +485,9 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                     <li class="<?= $clase ?>">
                         <div class="mb-1 flex items-center justify-between text-sm">
                             <span class="flex items-center gap-2 k-strong"><span class="k-macro-dot"></span><?= $etiqueta ?></span>
-                            <span class="tabular-nums k-muted"><?= round($hoy[$k]) ?><?= $metas[$k] ? ' / ' . $metas[$k] : '' ?> g</span>
+                            <span class="tabular-nums k-muted"><?= round($comido[$k]) ?><?= $metas[$k] ? ' / ' . $metas[$k] : '' ?> g</span>
                         </div>
-                        <div class="k-track"><div class="k-bar k-macro-bar" style="width: <?= $metas[$k] ? min(100, round($hoy[$k] / $metas[$k] * 100)) : 0 ?>%"></div></div>
+                        <div class="k-track"><div class="k-bar k-macro-bar" style="width: <?= $metas[$k] ? min(100, round($comido[$k] / $metas[$k] * 100)) : 0 ?>%"></div></div>
                     </li>
                 <?php endforeach; ?>
             </ul>
@@ -393,32 +495,73 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
     </div>
 
     <!-- COMIDAS DE HOY Y PESO -->
-    <div class="mt-4 grid gap-4 lg:grid-cols-3">
-        <section class="k-card lg:col-span-2">
-            <div class="k-card-head">
-                <h2 class="k-section-title">Comidas de hoy</h2>
-                <a href="user/planificacion_semanal.php" class="k-btn k-btn-ghost k-btn-sm">Ver la semana <?= icono('chevron-right') ?></a>
+    <div class="order-first mt-4 grid gap-4 lg:order-none lg:grid-cols-3">
+        <section id="comidas" class="k-card scroll-mt-6 lg:col-span-2">
+            <div class="k-card-head flex-wrap gap-3">
+                <div>
+                    <h2 class="k-section-title">Comidas de hoy</h2>
+                    <p class="text-xs k-muted"><?= $comidasHoy ? $comidasHechas . ' de ' . count($comidasHoy) . ' planificadas hechas' : 'Marca lo que vas comiendo' ?></p>
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="abrirComidaLibre()" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>He comido otra cosa</button>
+                    <a href="user/planificacion_semanal.php" class="k-btn k-btn-ghost k-btn-sm">Semana <?= icono('chevron-right') ?></a>
+                </div>
             </div>
+            <?php if ($avisoRegistro): [$tipoAviso, $textoAviso] = $avisoRegistro; ?>
+                <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mx-5 mt-4 sm:mx-6" role="status"><?= icono($tipoAviso === 'ok' ? 'check' : 'alert') ?><p><?= e($textoAviso) ?></p></div>
+            <?php endif; ?>
             <ul class="k-list">
                 <?php foreach ($momentosDefinidos as $momento):
                     $comida = $comidasHoy[$momento] ?? null;
+                    $hecho = $planHecho($momento);
+                    // Lo registrado en este momento que no es la comida del plan
+                    $extras = array_filter($registrosPorMomento[$momento] ?? [], fn($r) => !$hecho || (int) $r['id_registro'] !== (int) $hecho['id_registro']);
                     $estilo = $comida ? estiloTipoReceta(tipoRecetaParaMomento($momento)) : null; ?>
-                    <li class="flex items-center gap-4 px-5 py-3.5 sm:px-6">
-                        <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-lg <?= $comida ? '' : 'border border-dashed k-muted' ?>" style="background-color: var(--k-surface-2); <?= $comida ? '' : 'border-color: var(--k-border-strong);' ?>" aria-hidden="true"><?= $comida ? $estilo['emoji'] : icono('utensils', 'h-4 w-4') ?></span>
-                        <div class="min-w-0 flex-1">
-                            <p class="text-xs k-muted"><?= e($momento) ?></p>
+                    <li class="px-5 py-3.5 sm:px-6">
+                        <div class="flex items-center gap-4">
+                            <span class="relative grid h-10 w-10 shrink-0 place-items-center rounded-xl text-lg <?= $comida ? '' : 'border border-dashed k-muted' ?>" style="background-color: var(--k-surface-2); <?= $comida ? '' : 'border-color: var(--k-border-strong);' ?>" aria-hidden="true">
+                                <?= $comida ? $estilo['emoji'] : icono('utensils', 'h-4 w-4') ?>
+                                <?php if ($hecho): ?><span class="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full" style="background-color: var(--k-brand); color: var(--k-inverse-text, #fff);"><?= icono('check', 'h-3 w-3') ?></span><?php endif; ?>
+                            </span>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs k-muted"><?= e($momento) ?></p>
+                                <?php if ($comida): ?>
+                                    <a href="user/detalle_receta.php?id=<?= (int) $comida['id_receta'] ?>" class="block truncate font-medium hover:underline <?= $hecho ? 'k-muted line-through decoration-1' : 'k-strong' ?>"><?= e($comida['titulo']) ?></a>
+                                <?php elseif (!$extras): ?>
+                                    <p class="text-sm k-muted">Nada planificado</p>
+                                <?php endif; ?>
+                            </div>
                             <?php if ($comida): ?>
-                                <a href="user/detalle_receta.php?id=<?= (int) $comida['id_receta'] ?>" class="block truncate font-medium k-strong hover:underline"><?= e($comida['titulo']) ?></a>
-                            <?php else: ?>
-                                <p class="text-sm k-muted">Nada planificado</p>
+                                <span class="hidden text-sm tabular-nums sm:block k-muted"><?= (int) round($comida['calorias_por_racion'] * ((float) ($comida['raciones'] ?? 1) ?: 1)) ?> kcal</span>
+                                <form method="POST" action="user/registrar_comida.php" class="m-0 shrink-0">
+                                    <?= campoCsrf() ?>
+                                    <?php if ($hecho): ?>
+                                        <input type="hidden" name="accion" value="deshacer">
+                                        <input type="hidden" name="id_registro" value="<?= (int) $hecho['id_registro'] ?>">
+                                        <button type="submit" class="k-btn k-btn-ghost k-btn-sm" aria-label="Desmarcar <?= e($comida['titulo']) ?>"><?= icono('x') ?>Deshacer</button>
+                                    <?php else: ?>
+                                        <input type="hidden" name="accion" value="hecho">
+                                        <input type="hidden" name="id_comida" value="<?= (int) $comida['id_comida_planificada'] ?>">
+                                        <button type="submit" class="k-btn k-btn-primary k-btn-sm" aria-label="Marcar <?= e($comida['titulo']) ?> como comida"><?= icono('check') ?>Hecho</button>
+                                    <?php endif; ?>
+                                </form>
+                            <?php elseif (!$extras): ?>
+                                <a href="user/generar_receta.php?dia=<?= urlencode($diaHoyNombre) ?>&momento=<?= urlencode($momento) ?>" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>Planificar</a>
                             <?php endif; ?>
                         </div>
-                        <?php if ($comida): ?>
-                            <span class="hidden text-sm tabular-nums sm:block k-muted"><?= (int) $comida['calorias_por_racion'] ?> kcal</span>
-                            <span class="k-badge k-badge-ok">Planificada</span>
-                        <?php else: ?>
-                            <a href="user/generar_receta.php?dia=<?= urlencode($diaHoyNombre) ?>&momento=<?= urlencode($momento) ?>" class="k-btn k-btn-secondary k-btn-sm"><?= icono('plus') ?>Añadir</a>
-                        <?php endif; ?>
+                        <?php foreach ($extras as $extra): ?>
+                            <div class="ml-14 mt-2 flex items-center gap-3 rounded-xl px-3 py-2 text-sm" style="background-color: var(--k-surface-2);">
+                                <span class="k-badge k-badge-warn shrink-0">Fuera del plan</span>
+                                <span class="min-w-0 flex-1 truncate k-strong"><?= e($extra['descripcion']) ?></span>
+                                <span class="shrink-0 tabular-nums k-muted"><?= (int) $extra['calorias'] ?> kcal</span>
+                                <form method="POST" action="user/registrar_comida.php" class="m-0 shrink-0">
+                                    <?= campoCsrf() ?>
+                                    <input type="hidden" name="accion" value="deshacer">
+                                    <input type="hidden" name="id_registro" value="<?= (int) $extra['id_registro'] ?>">
+                                    <button type="submit" class="k-btn k-btn-ghost k-btn-icon k-btn-danger-text h-7 w-7" aria-label="Quitar <?= e($extra['descripcion']) ?>"><?= icono('x', 'h-4 w-4') ?></button>
+                                </form>
+                            </div>
+                        <?php endforeach; ?>
                     </li>
                 <?php endforeach; ?>
             </ul>
@@ -449,6 +592,8 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
         </section>
     </div>
 
+    </div>
+
     <!-- RESUMEN: RESTRICCIONES, NUTRICIONISTA Y BIBLIOTECA -->
     <div class="mt-4 grid gap-4 md:grid-cols-3">
         <a href="user/perfil.php" class="k-card k-card-link k-card-pad">
@@ -468,7 +613,14 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                     <span class="k-avatar" aria-hidden="true"><?= e(mb_strtoupper(mb_substr($miNutricionista['nombre'] ?: $miNutricionista['correo'], 0, 1, 'UTF-8'), 'UTF-8')) ?></span>
                     <div class="min-w-0"><p class="truncate font-medium k-strong"><?= e($miNutricionista['nombre'] ?: 'Nutricionista') ?></p><p class="truncate text-sm k-muted"><?= e($miNutricionista['correo']) ?></p></div>
                 </div>
-                <p class="mt-3 text-xs k-muted">Puede ver y ajustar tu plan.</p>
+                <?php if ($notasNutri): $ultimaNota = $notasNutri[0]; ?>
+                    <blockquote class="k-subtle mt-4 rounded-xl p-3 text-sm leading-relaxed">
+                        <p class="line-clamp-3 whitespace-pre-line k-strong">«<?= e($ultimaNota['texto']) ?>»</p>
+                        <footer class="mt-1.5 text-xs k-muted"><?= e(formatearFecha($ultimaNota['fecha'])) ?></footer>
+                    </blockquote>
+                <?php else: ?>
+                    <p class="mt-3 text-xs k-muted">Puede ver tu evolución y ajustar tu plan.</p>
+                <?php endif; ?>
             <?php else: ?>
                 <p class="mt-4 text-sm k-muted">Aún no tienes. Si trabajas con uno, pídele que te invite con tu correo.</p>
             <?php endif; ?>
@@ -486,15 +638,15 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
 
     <!-- ACCESOS -->
     <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <?php foreach ([['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus menús de los 7 días', 'k-tile-indigo'],
-                        ['user/mis_recetas.php', 'book', 'Mis recetas', 'Las tuyas y las de la IA', 'k-tile-rose'],
-                        ['user/lista_compra.php', 'cart', 'Lista de la compra', 'Lo que te falta comprar', ''],
-                        ['user/inventario.php', 'package', 'Despensa', 'Lo que ya tienes en casa', 'k-tile-amber']] as [$url, $ic, $titulo, $texto, $tile]): ?>
+        <?php foreach ([['user/planificacion_semanal.php', 'calendar', 'Plan semanal', 'Tus 7 días de menú', 'k-tile-indigo'],
+                        ['user/mis_recetas.php', 'book', 'Mis recetas', 'Tuyas y de la IA', 'k-tile-rose'],
+                        ['user/lista_compra.php', 'cart', 'Compra', 'Lo que te falta', ''],
+                        ['user/inventario.php', 'package', 'Despensa', 'Lo que tienes en casa', 'k-tile-amber']] as [$url, $ic, $titulo, $texto, $tile]): ?>
             <a href="<?= $url ?>" class="k-card k-card-link group flex items-center gap-4 p-5">
                 <span class="k-icon-tile <?= $tile ?> transition-transform group-hover:scale-105"><?= icono($ic) ?></span>
                 <span class="min-w-0 flex-1">
                     <span class="block font-medium k-strong"><?= $titulo ?></span>
-                    <span class="block truncate text-sm k-muted"><?= $texto ?></span>
+                    <span class="block text-sm leading-snug k-muted"><?= $texto ?></span>
                 </span>
                 <?= icono('chevron-right', 'h-4 w-4 shrink-0 k-muted transition-transform group-hover:translate-x-0.5') ?>
             </a>
@@ -502,15 +654,90 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
     </div>
 </div>
 
+<?php
+$hora = (int) date('G');
+$momentoPorHora = $hora < 11 ? 'Desayuno' : ($hora < 13 ? 'Media Mañana' : ($hora < 16 ? 'Almuerzo' : ($hora < 20 ? 'Merienda' : 'Cena')));
+?>
+<!-- MODAL: REGISTRAR EL PESO DE HOY (se guarda en Progreso) -->
+<div id="modalPeso" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloPeso">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="user/progreso.php" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="fecha" value="<?= date('Y-m-d') ?>">
+        <input type="hidden" name="volver" value="panel">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloPeso" class="k-modal-title">Tu peso de hoy</h2>
+        <p class="mt-1 text-sm k-muted">Con él se recalculan tus calorías y macros.<?= $pesoActual !== null ? ' El último: ' . $coma($pesoActual) . ' kg.' : '' ?></p>
+        <div class="mt-5 grid grid-cols-2 gap-3">
+            <div>
+                <label for="pesoRapido" class="k-label">Peso (kg)</label>
+                <input id="pesoRapido" name="peso_kg" type="number" step="0.1" min="30" max="350" required inputmode="decimal" class="k-input" placeholder="<?= $pesoActual !== null ? e($coma($pesoActual)) : '70,0' ?>" data-autofocus>
+            </div>
+            <div>
+                <label for="cinturaRapida" class="k-label">Cintura (cm)</label>
+                <input id="cinturaRapida" name="cintura_cm" type="number" step="0.1" min="40" max="250" inputmode="decimal" class="k-input" placeholder="Opcional">
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" name="register_progreso" value="1" class="k-btn k-btn-primary"><?= icono('check') ?>Guardar</button>
+        </div>
+    </form>
+</div>
+
+<!-- MODAL: HE COMIDO OTRA COSA -->
+<div id="modalComidaLibre" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloComidaLibre">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="user/registrar_comida.php" class="k-modal-panel">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="accion" value="libre">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloComidaLibre" class="k-modal-title">He comido otra cosa</h2>
+        <p class="mt-1 text-sm k-muted">Apunta lo que has tomado fuera del plan para que tus cifras de hoy sean reales.</p>
+        <div class="mt-5 space-y-4">
+            <div>
+                <label for="libreDescripcion" class="k-label">¿Qué has comido?</label>
+                <input id="libreDescripcion" name="descripcion" type="text" required maxlength="200" class="k-input" placeholder="Ej. bocadillo de jamón y una caña" data-autofocus>
+            </div>
+            <div>
+                <label for="libreMomento" class="k-label">¿Cuándo?</label>
+                <select id="libreMomento" name="momento" class="k-input">
+                    <?php foreach ($momentosDefinidos as $m): ?><option value="<?= e($m) ?>" <?= $m === $momentoPorHora ? 'selected' : '' ?>><?= e($m) ?></option><?php endforeach; ?>
+                </select>
+            </div>
+            <div class="rounded-2xl border p-4" style="border-color: var(--k-border);">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-medium k-strong">Calorías y macros</p>
+                    <button type="button" id="btnEstimar" onclick="estimarComidaLibre()" class="k-btn k-btn-accent k-btn-sm"><?= icono('sparkles') ?>Calcular con IA</button>
+                </div>
+                <p id="estimarAviso" class="mt-2 text-xs k-muted" hidden></p>
+                <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <?php foreach ([['calorias', 'Calorías', 'kcal', ''], ['proteinas', 'Proteína', 'g', 'k-macro-p'], ['carbohidratos', 'Carbos', 'g', 'k-macro-c'], ['grasas', 'Grasa', 'g', 'k-macro-f']] as [$campo, $texto, $unidad, $clase]): ?>
+                        <div class="<?= $clase ?>">
+                            <label for="libre_<?= $campo ?>" class="k-label flex items-center gap-1.5 text-xs"><?php if ($clase): ?><span class="k-macro-dot"></span><?php endif; ?><?= $texto ?> <span class="font-normal k-muted">(<?= $unidad ?>)</span></label>
+                            <input id="libre_<?= $campo ?>" name="<?= $campo ?>" type="number" min="0" step="1" inputmode="numeric" class="k-input" <?= $campo === 'calorias' ? 'required' : '' ?> placeholder="0">
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-primary"><?= icono('check') ?>Apuntar</button>
+        </div>
+    </form>
+</div>
+
 <script>
     // Datos para los gráficos del panel (main.js)
     window.dashboardData = <?= json_html([
         'progreso' => array_map(fn($p) => ['fecha' => $p['fecha'], 'peso_kg' => $p['peso_kg']], $pesos),
         'semana'   => array_map(fn($d) => round($d['kcal']), $semana),
+        'comido'   => $consumoSemana,
         'dias'     => array_map(fn($d) => mb_substr($d, 0, 3), DIAS_SEMANA),
         'hoy'      => $indiceHoy,
         'meta'     => $metaKcal,
-        'macros'   => [round($hoy['p'] * 4), round($hoy['c'] * 4), round($hoy['g'] * 9)],
+        'macros'   => [round($comido['p'] * 4), round($comido['c'] * 4), round($comido['g'] * 9)],
     ]) ?>;
 </script>
 
