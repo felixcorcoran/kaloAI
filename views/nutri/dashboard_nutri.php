@@ -10,6 +10,7 @@ session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php';
 require_once __DIR__ . '/../../core/recetas.php';
+require_once __DIR__ . '/../../core/seguimiento.php';
 
 /* ==========================================================================
    SEGURIDAD Y CONTROL DE ACCESO
@@ -48,6 +49,8 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([lunesDe(), $nutriId]);
 $pacientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Mensajes de pacientes que aún no se han leído en su ficha
+$sinLeerPorPaciente = respuestasSinLeer($pdo, $nutriId);
 
 
 
@@ -165,6 +168,10 @@ include_once __DIR__ . '/../templates/header.php';
                                 </p>
                                 <p class="text-xs k-muted"><?= e($objetivosTexto[$p['objetivo'] ?? ''] ?? 'Sin objetivo') ?></p>
                             </div>
+                            <?php $nuevos = $sinLeerPorPaciente[(int) $p['id_usuario']] ?? 0; ?>
+                            <?php if ($nuevos): ?>
+                                <a href="paciente.php?id=<?= (int) $p['id_usuario'] ?>#notas" class="k-badge k-badge-brand shrink-0" title="Mensajes sin leer"><?= icono('message') ?><?= $nuevos ?><span class="sr-only"> <?= $nuevos === 1 ? 'mensaje sin leer' : 'mensajes sin leer' ?></span></a>
+                            <?php endif; ?>
                             <a href="paciente.php?id=<?= (int) $p['id_usuario'] ?>" class="k-btn k-btn-secondary k-btn-sm shrink-0">Ver ficha <?= icono('arrow-right') ?></a>
                         </li>
                     <?php endforeach; ?>

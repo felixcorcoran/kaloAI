@@ -66,7 +66,8 @@
 
 <!-- JavaScript de la web y librería de gráficos -->
 <script src="<?= BASE_URL ?>public/js/main.js?v=<?= @filemtime(__DIR__ . '/../../public/js/main.js') ?>"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<?php // Chart.js desde la propia web (public/lib), no desde un CDN, y solo en las páginas con gráficas ($usaGraficas) ?>
+<?php if (!empty($usaGraficas)): ?><script src="<?= BASE_URL ?>public/lib/chart-4.4.1.umd.min.js"></script><?php endif; ?>
 <script>
     // En modo oscuro, los textos y las líneas de los gráficos en tonos claros
     if (window.Chart) {

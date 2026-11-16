@@ -60,9 +60,14 @@ function escaparHtml(texto) {
    o con Escape.
    ========================================================================== */
 
+// Elementos que pueden recibir el foco dentro de un modal
+const SELECTOR_ENFOCABLES = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function abrirModal(id) {
     const modal = document.getElementById(id);
     if (!modal) return;
+    // Al cerrarlo, el foco vuelve a donde estaba (normalmente, el botón que lo abrió)
+    if (modal.hidden) modal._focoAnterior = document.activeElement;
     modal.hidden = false;
     document.body.classList.add('overflow-hidden');
     const foco = modal.querySelector('[data-autofocus]') || modal.querySelector('input:not([type=hidden]), select, textarea, button');
@@ -76,7 +81,32 @@ function cerrarModal(id) {
     if (!document.querySelector('.k-modal:not([hidden])')) {
         document.body.classList.remove('overflow-hidden');
     }
+    const anterior = modal._focoAnterior;
+    modal._focoAnterior = null;
+    if (anterior && typeof anterior.focus === 'function' && document.contains(anterior)) anterior.focus();
 }
+
+// Con un modal abierto, el tabulador no sale de él (ni al principio ni al final)
+document.addEventListener('keydown', (evento) => {
+    if (evento.key !== 'Tab') return;
+    const abiertos = document.querySelectorAll('.k-modal:not([hidden])');
+    if (!abiertos.length) return;
+    const modal = abiertos[abiertos.length - 1];
+    const enfocables = [...modal.querySelectorAll(SELECTOR_ENFOCABLES)].filter(el => el.offsetParent !== null || el === document.activeElement);
+    if (!enfocables.length) return;
+    const primero = enfocables[0];
+    const ultimo = enfocables[enfocables.length - 1];
+    if (!modal.contains(document.activeElement)) {
+        evento.preventDefault();
+        primero.focus();
+    } else if (evento.shiftKey && document.activeElement === primero) {
+        evento.preventDefault();
+        ultimo.focus();
+    } else if (!evento.shiftKey && document.activeElement === ultimo) {
+        evento.preventDefault();
+        primero.focus();
+    }
+});
 
 document.addEventListener('click', (evento) => {
     const cerrar = evento.target.closest('[data-cerrar-modal]');
@@ -124,7 +154,19 @@ function abrirReceta(r) {
     document.getElementById('mMom').textContent = r.momento_comida;
     document.getElementById('mDesc').textContent = r.descripcion || 'Sin instrucciones.';
     document.getElementById('mVer').href = 'detalle_receta.php?id=' + encodeURIComponent(r.id_receta);
-    pintarMacros(document.getElementById('mMacros'), r.proteinas_g_por_racion, r.carbohidratos_g_por_racion, r.grasas_g_por_racion, r.calorias_por_racion);
+    // Las cifras se muestran para las raciones elegidas en el plan
+    const raciones = parseFloat(r.raciones) || 1;
+    pintarMacros(document.getElementById('mMacros'), r.proteinas_g_por_racion * raciones, r.carbohidratos_g_por_racion * raciones,
+        r.grasas_g_por_racion * raciones, r.calorias_por_racion * raciones);
+    const idComida = document.getElementById('mIdComida');
+    if (idComida) {
+        idComida.value = r.id_comida_planificada || '';
+        document.querySelectorAll('#mRacionesForm [data-raciones]').forEach(boton => {
+            const actual = Math.abs(parseFloat(boton.dataset.raciones) - raciones) < 0.001;
+            boton.setAttribute('aria-pressed', actual ? 'true' : 'false');
+            if (actual) boton.setAttribute('aria-current', 'true'); else boton.removeAttribute('aria-current');
+        });
+    }
     abrirModal('modalReceta');
 }
 
@@ -726,3 +768,21 @@ function iniciarCarrusel() {
     contenedor?.addEventListener('mouseleave', () => { intervalo = setInterval(siguiente, 7000); });
     mover();
 }
+
+/* ==========================================================================
+   COPIAR AL PORTAPAPELES (botones con data-copiar="#idDelCampo")
+   ========================================================================== */
+document.addEventListener('click', async (evento) => {
+    const boton = evento.target.closest('[data-copiar]');
+    if (!boton) return;
+    const campo = document.querySelector(boton.dataset.copiar);
+    if (!campo) return;
+    const aviso = document.getElementById('avisoCopiado');
+    try {
+        await navigator.clipboard.writeText(campo.value);
+        if (aviso) aviso.textContent = 'Copiado. Pégalo en WhatsApp, un correo o donde quieras.';
+    } catch (e) {
+        campo.select();
+        if (aviso) aviso.textContent = 'Selecciona el enlace y cópialo a mano.';
+    }
+});

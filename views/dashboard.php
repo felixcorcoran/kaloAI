@@ -218,8 +218,9 @@ $miNutricionista = $stmtNutri->fetch();
 
 // Notas del nutricionista: las nuevas se resaltan y, al verlas, quedan leídas
 // (en modo gestión no se marcan: las está viendo el nutricionista, no el paciente)
-$notasNutri = notasDelPaciente($pdo, (int) $userId, 3);
-$notasSinLeer = count(array_filter($notasNutri, fn($n) => !$n['leida']));
+// Solo las que escribe el nutricionista (las respuestas del paciente van en «Mensajes»)
+$notasNutri = array_values(array_filter(notasDelPaciente($pdo, (int) $userId, 10), fn($n) => !$n['de_paciente']));
+$notasSinLeer = notasSinLeerDelPaciente($pdo, (int) $userId);
 if ($notasSinLeer && empty($_SESSION['is_impersonating'])) marcarNotasLeidas($pdo, (int) $userId);
 
 // Carga del componente de cabecera (antes de cualquier HTML: el <!DOCTYPE> va primero)
@@ -349,6 +350,7 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                 <p class="text-xs font-medium k-muted"><?= $notasSinLeer === 1 ? 'Nota nueva' : $notasSinLeer . ' notas nuevas' ?> de <?= e(explode(' ', $nueva['autor'])[0]) ?> · <?= e(formatearFecha($nueva['fecha'])) ?></p>
                 <p class="mt-1 whitespace-pre-line leading-relaxed k-strong"><?= e($nueva['texto']) ?></p>
             </div>
+            <a href="user/mensajes.php" class="k-btn k-btn-secondary k-btn-sm shrink-0"><?= icono('message', 'h-4 w-4') ?>Responder</a>
         </div>
     <?php endif; ?>
 
@@ -468,14 +470,17 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                     <p class="text-xs k-muted">media de los días con plan</p>
                 </div>
             </div>
-            <div class="relative mt-5 min-h-[16rem] flex-1"><canvas id="semanaChart" class="absolute inset-0" aria-label="Calorías planificadas por día"></canvas></div>
+            <div class="relative mt-5 min-h-[16rem] flex-1"><canvas id="semanaChart" class="absolute inset-0" role="img" aria-label="Calorías planificadas y comidas por día de esta semana"></canvas></div>
+            <?= tablaDatos('Calorías de cada día de esta semana', ['Día', 'Planificado', 'Comido'], array_map(
+                fn($i) => [DIAS_SEMANA[$i], $entero($semana[$i]['kcal']) . ' kcal', $consumoSemana[$i] === null ? '—' : $entero($consumoSemana[$i]) . ' kcal'],
+                range(0, 6))) ?>
         </section>
 
         <section class="k-card k-card-pad flex flex-col">
             <h2 class="k-section-title">Macros de hoy</h2>
             <p class="mt-0.5 text-sm k-muted">Lo que has comido frente a tu objetivo.</p>
             <div class="relative mx-auto mt-4 h-44 w-44">
-                <canvas id="macrosChart" class="absolute inset-0" aria-label="Reparto de macronutrientes de hoy"></canvas>
+                <canvas id="macrosChart" class="absolute inset-0" role="img" aria-label="Reparto de macronutrientes de lo comido hoy: proteína <?= round($comido['p']) ?> g, carbohidratos <?= round($comido['c']) ?> g, grasa <?= round($comido['g']) ?> g"></canvas>
                 <div class="pointer-events-none absolute inset-0 grid place-items-center text-center">
                     <div><p class="font-display text-2xl font-semibold tabular-nums k-strong"><?= $entero($comido['kcal']) ?></p><p class="text-xs k-muted">kcal comidas</p></div>
                 </div>
@@ -576,7 +581,8 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                 <a href="user/progreso.php" class="k-btn k-btn-ghost k-btn-sm">Ver todo</a>
             </div>
             <?php if (count($pesos) >= 2): ?>
-                <div class="relative mt-4 min-h-[10rem] flex-1"><canvas id="progressChart" class="absolute inset-0" aria-label="Evolución del peso"></canvas></div>
+                <div class="relative mt-4 min-h-[10rem] flex-1"><canvas id="progressChart" class="absolute inset-0" role="img" aria-label="Evolución del peso, de <?= e($coma($pesoInicial)) ?> a <?= e($coma($pesoActual)) ?> kg"></canvas></div>
+                <?= tablaDatos('Registros de peso', ['Fecha', 'Peso'], array_map(fn($p) => [formatearFecha($p['fecha']), $coma($p['peso_kg']) . ' kg'], array_reverse($pesos))) ?>
                 <dl class="mt-4 grid grid-cols-3 gap-2 border-t pt-4 text-center" style="border-color: var(--k-border);">
                     <div><dt class="text-[11px] k-muted">Inicio</dt><dd class="font-medium tabular-nums k-strong"><?= $coma($pesoInicial) ?> kg</dd></div>
                     <div><dt class="text-[11px] k-muted">Ahora</dt><dd class="font-medium tabular-nums k-strong"><?= $coma($pesoActual) ?> kg</dd></div>
@@ -621,6 +627,7 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                 <?php else: ?>
                     <p class="mt-3 text-xs k-muted">Puede ver tu evolución y ajustar tu plan.</p>
                 <?php endif; ?>
+                <a href="user/mensajes.php" class="k-link mt-3 inline-flex items-center gap-1.5 text-sm"><?= icono('message', 'h-4 w-4') ?><?= $notasNutri ? 'Ver la conversación' : 'Escribirle' ?></a>
             <?php else: ?>
                 <p class="mt-4 text-sm k-muted">Aún no tienes. Si trabajas con uno, pídele que te invite con tu correo.</p>
             <?php endif; ?>
@@ -741,4 +748,5 @@ $momentoPorHora = $hora < 11 ? 'Desayuno' : ($hora < 13 ? 'Media Mañana' : ($ho
     ]) ?>;
 </script>
 
+<?php $usaGraficas = true; // carga Chart.js (footer.php) ?>
 <?php include_once __DIR__ . '/templates/footer.php'; ?>

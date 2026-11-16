@@ -41,6 +41,19 @@ include_once __DIR__ . '/../views/templates/header.php';
                 Para crear una receta, KaloAI envía a Google Gemini tu objetivo de calorías y macros, los ingredientes de tu despensa y los alimentos que no puedes tomar.
                 <strong class="k-strong">No se envían tu nombre ni tu correo.</strong> No vendemos tus datos ni los cedemos con fines comerciales.
             </p>
+            <p class="mt-3 text-sm leading-relaxed k-muted">
+                Si añades productos a la despensa con una <strong class="k-strong">foto del tique</strong>, esa foto se envía a Google Gemini para leerla y
+                después se descarta: KaloAI no la guarda. Antes de enviarla, comprueba que no salgan datos que no quieras compartir (por ejemplo, los de una tarjeta).
+            </p>
+        </section>
+
+        <section class="k-card k-card-pad">
+            <h2 class="k-section-title">Lo que eliges compartir</h2>
+            <ul class="mt-4 space-y-3 text-sm leading-relaxed k-muted">
+                <li><strong class="k-strong">Lista de la compra compartida:</strong> quien tenga el enlace ve tu lista de la compra y tu nombre de pila, nada más. Puedes dejar de compartirla cuando quieras y el enlace deja de funcionar.</li>
+                <li><strong class="k-strong">Mensajes con tu nutricionista:</strong> los ve solo tu nutricionista.</li>
+                <li><strong class="k-strong">Resumen semanal por correo:</strong> solo si lo activas en tu perfil. Cada correo trae un enlace para darte de baja.</li>
+            </ul>
         </section>
 
         <section class="k-card k-card-pad">

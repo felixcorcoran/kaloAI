@@ -44,6 +44,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'copia
     exit;
 }
 
+// Plantillas de semana: guardar esta, aplicar una o borrarla
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['accion'] ?? '', ['guardar_plantilla', 'aplicar_plantilla', 'borrar_plantilla'], true)) {
+    try {
+        switch ($_POST['accion']) {
+            case 'guardar_plantilla':
+                $r = guardarPlantilla($pdo, (int) $userId, $semana, (string) ($_POST['nombre'] ?? ''));
+                $_SESSION['aviso_plan'] = is_int($r) ? ['ok', 'Guardada la plantilla «' . nombrePlantillaValido($_POST['nombre']) . '». Aplícala a cualquier semana desde «Plantillas».'] : ['error', $r];
+                break;
+            case 'aplicar_plantilla':
+                $sustituir = ($_POST['modo'] ?? '') === 'sustituir';
+                $puestas = aplicarPlantilla($pdo, (int) $userId, (int) ($_POST['id_plantilla'] ?? 0), $semana, $sustituir);
+                $_SESSION['aviso_plan'] = match (true) {
+                    $puestas === null => ['error', 'Esa plantilla ya no existe.'],
+                    $puestas === 0    => ['error', 'No se ha puesto nada: los huecos de la plantilla ya están ocupados esta semana. Elige «Sustituir la semana» si quieres cambiarla entera.'],
+                    default           => ['ok', 'Puestas ' . $puestas . ($puestas === 1 ? ' comida' : ' comidas') . ' de la plantilla' . ($sustituir ? ' (la semana se ha vaciado antes).' : ' en los huecos libres.')],
+                };
+                break;
+            case 'borrar_plantilla':
+                $_SESSION['aviso_plan'] = borrarPlantilla($pdo, (int) $userId, (int) ($_POST['id_plantilla'] ?? 0))
+                    ? ['ok', 'Plantilla borrada.'] : ['error', 'Esa plantilla ya no existe.'];
+                break;
+        }
+    } catch (PDOException $e) {
+        error_log('Error con las plantillas de semana: ' . $e->getMessage());
+        $_SESSION['aviso_plan'] = ['error', 'No se ha podido completar. Inténtalo de nuevo.'];
+    }
+    header('Location: ' . $urlPlan());
+    exit;
+}
+
+// Raciones de una comida (½, 1, 1½, 2 o 3)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'raciones') {
+    $ok = cambiarRaciones($pdo, (int) $userId, (int) ($_POST['id_comida'] ?? 0), $_POST['raciones'] ?? '');
+    $_SESSION['aviso_plan'] = $ok
+        ? ['ok', 'Ahora son ' . textoRaciones(racionesValidas($_POST['raciones'])) . '. Las calorías del día y la lista de la compra ya lo tienen en cuenta.']
+        : ['error', 'No se han podido cambiar las raciones.'];
+    header('Location: ' . $urlPlan());
+    exit;
+}
+
 /**
  * 1. LÓGICA DE ELIMINACIÓN (Mantenimiento del Plan)
  * Permite al usuario retirar recetas específicas de su calendario.
@@ -137,6 +177,7 @@ $stmtPrev = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_
                            WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
 $stmtPrev->execute([$userId, semanaRelativa($semana, -1)]);
 $comidasSemanaAnterior = (int) $stmtPrev->fetchColumn();
+$plantillas = plantillasDe($pdo, (int) $userId);
 
 // Carga del componente de cabecera 
 include_once __DIR__ . '/../templates/header.php';
@@ -192,6 +233,9 @@ $alertas = [
                         <input type="hidden" name="accion" value="copiar_semana">
                         <button type="submit" class="k-btn k-btn-secondary" title="Copia sus comidas en los huecos libres de esta semana"><?= icono('download') ?>Copiar la semana anterior</button>
                     </form>
+                <?php endif; ?>
+                <?php if (!$esPasada || $numComidas > 0): ?>
+                    <button type="button" onclick="abrirModal('modalPlantillas')" class="k-btn k-btn-secondary" title="Guarda una semana que te ha ido bien y reutilízala"><?= icono('layers') ?>Plantillas<?php if ($plantillas): ?><span class="k-badge px-1.5 py-0"><?= count($plantillas) ?></span><?php endif; ?></button>
                 <?php endif; ?>
                 <?php if ($huecosLibresTotal > 0 && !$esPasada): ?>
                     <button type="button" onclick="abrirModal('modalRellenarSemana')" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Rellenar con IA</button>
@@ -263,7 +307,7 @@ $alertas = [
             <?= icono('info') ?>
             <p><?= $esPasada
                 ? 'No planificaste nada esta semana.'
-                : 'Esta semana aún no tiene comidas. ' . ($comidasSemanaAnterior ? 'Copia la anterior, ' : '') . 'rellénala con IA o añade comidas una a una.' ?></p>
+                : 'Esta semana aún no tiene comidas. ' . ($comidasSemanaAnterior ? 'Copia la anterior, ' : '') . ($plantillas ? 'aplica una plantilla, ' : '') . 'rellénala con IA o añade comidas una a una.' ?></p>
         </div>
     <?php endif; ?>
 
@@ -301,7 +345,8 @@ $alertas = [
                                         class="k-subtle flex h-full w-full flex-col rounded-xl border border-transparent p-3 text-left transition hover:border-teal-500/40">
                                     <span class="text-[11px] font-semibold uppercase tracking-wider k-muted"><?= e($m) ?></span>
                                     <span class="mt-1 line-clamp-2 pr-5 text-sm font-medium leading-snug k-strong"><?= e($c['titulo']) ?></span>
-                                    <span class="mt-auto pt-2 text-xs tabular-nums k-muted"><?= round($c['calorias_por_racion']) ?> kcal</span>
+                                    <?php $rac = (float) ($c['raciones'] ?: 1); ?>
+                                    <span class="mt-auto flex items-center gap-1.5 pt-2 text-xs tabular-nums k-muted"><?= round($c['calorias_por_racion'] * $rac) ?> kcal<?php if (abs($rac - 1) > 0.001): ?><span class="k-badge k-badge-brand px-1.5 py-0" title="<?= e(textoRaciones($rac)) ?>">×<?= e(str_replace('.', ',', rtrim(rtrim(number_format($rac, 1, '.', ''), '0'), '.'))) ?></span><?php endif; ?></span>
                                 </button>
                                 <button type="button" onclick="confirmarEliminarComida(<?= (int) $c['id_comida_planificada'] ?>)"
                                         class="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-lg opacity-60 transition hover:bg-red-500/10 hover:text-red-600 hover:opacity-100 k-muted"
@@ -336,6 +381,20 @@ $alertas = [
         <p id="mMom" class="k-eyebrow"></p>
         <h2 id="mTit" class="k-modal-title mt-1 pr-8"></h2>
         <div id="mMacros" class="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4"></div>
+        <form method="POST" action="<?= e($urlPlan()) ?>" class="mt-5" id="mRacionesForm">
+            <?= campoCsrf() ?>
+            <input type="hidden" name="accion" value="raciones">
+            <input type="hidden" name="id_comida" id="mIdComida" value="">
+            <fieldset>
+                <legend class="k-label">¿Cuánto vas a comer?</legend>
+                <div class="k-seg" role="group">
+                    <?php foreach (RACIONES_PLAN as $r): ?>
+                        <button type="submit" name="raciones" value="<?= $r ?>" data-raciones="<?= $r ?>"><?= e(str_replace(' raciones', '', str_replace(' ración', '', textoRaciones($r)))) ?></button>
+                    <?php endforeach; ?>
+                </div>
+                <p class="k-hint">En raciones de la receta. Las cifras de arriba ya están multiplicadas.</p>
+            </fieldset>
+        </form>
         <h3 class="mt-6 text-sm font-semibold k-strong">Preparación</h3>
         <div class="custom-scrollbar mt-2 max-h-56 overflow-y-auto pr-1">
             <p id="mDesc" class="whitespace-pre-line text-sm leading-relaxed k-muted"></p>
@@ -382,6 +441,65 @@ $alertas = [
     // Objetivos diarios para el resumen de cada día (main.js)
     window.planData = { meta: { kcal: <?= (float) $metaKcal ?>, p: <?= (float) $metaP ?>, c: <?= (float) $metaC ?>, g: <?= (float) $metaG ?> } };
 </script>
+
+<!-- MODAL: PLANTILLAS DE SEMANA -->
+<div id="modalPlantillas" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloPlantillas">
+    <div class="k-modal-backdrop"></div>
+    <div class="k-modal-panel">
+        <button type="button" class="k-btn k-btn-ghost k-btn-icon k-modal-close" data-cerrar-modal aria-label="Cerrar"><?= icono('x') ?></button>
+        <h2 id="tituloPlantillas" class="k-modal-title">Plantillas de semana</h2>
+        <p class="mt-1 text-sm k-muted">Guarda una semana que te ha salido bien y ponla otra vez en un clic.</p>
+
+        <?php if ($numComidas > 0): ?>
+            <form method="POST" action="<?= e($urlPlan()) ?>" class="k-subtle mt-5 rounded-xl p-4">
+                <?= campoCsrf() ?>
+                <input type="hidden" name="accion" value="guardar_plantilla">
+                <label for="nombrePlantilla" class="k-label">Guardar <?= $esSemanaActual ? 'esta semana' : 'la semana del ' . $fechaCorta(0) ?> (<?= $numComidas ?> <?= $numComidas === 1 ? 'comida' : 'comidas' ?>)</label>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <input id="nombrePlantilla" name="nombre" type="text" maxlength="60" required class="k-input" placeholder="Ej. Semana de entreno" list="nombresPlantillas" data-autofocus>
+                    <button type="submit" class="k-btn k-btn-primary shrink-0"><?= icono('plus') ?>Guardar</button>
+                </div>
+                <datalist id="nombresPlantillas"><?php foreach ($plantillas as $pl): ?><option value="<?= e($pl['nombre']) ?>"><?php endforeach; ?></datalist>
+                <p class="k-hint">Con el nombre de una que ya tengas, la sustituye.</p>
+            </form>
+        <?php endif; ?>
+
+        <?php if ($plantillas && !$esPasada): ?>
+            <h3 class="mt-6 text-sm font-semibold k-strong">Aplicar a <?= $esSemanaActual ? 'esta semana' : 'la semana del ' . $fechaCorta(0) ?></h3>
+            <ul class="mt-2 space-y-2">
+                <?php foreach ($plantillas as $pl): ?>
+                    <li class="k-subtle rounded-xl p-3">
+                        <div class="flex items-start gap-3">
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate font-medium k-strong"><?= e($pl['nombre']) ?></p>
+                                <p class="text-xs k-muted"><?= (int) $pl['comidas'] ?> <?= (int) $pl['comidas'] === 1 ? 'comida' : 'comidas' ?> · <?= number_format((float) $pl['kcal_dia'], 0, ',', '.') ?> kcal/día de media</p>
+                            </div>
+                            <form method="POST" action="<?= e($urlPlan()) ?>" class="m-0 shrink-0">
+                                <?= campoCsrf() ?>
+                                <input type="hidden" name="accion" value="borrar_plantilla">
+                                <input type="hidden" name="id_plantilla" value="<?= (int) $pl['id_plantilla'] ?>">
+                                <button type="submit" class="k-btn k-btn-ghost k-btn-icon k-btn-sm" aria-label="Borrar la plantilla <?= e($pl['nombre']) ?>" title="Borrar" onclick="return confirm('¿Borrar la plantilla «<?= e(addslashes($pl['nombre'])) ?>»? Tus semanas no cambian.')"><?= icono('trash', 'h-4 w-4') ?></button>
+                            </form>
+                        </div>
+                        <div class="mt-2">
+                            <form method="POST" action="<?= e($urlPlan()) ?>" class="m-0 flex flex-wrap items-center gap-2">
+                                <?= campoCsrf() ?>
+                                <input type="hidden" name="accion" value="aplicar_plantilla">
+                                <input type="hidden" name="id_plantilla" value="<?= (int) $pl['id_plantilla'] ?>">
+                                <button type="submit" name="modo" value="rellenar" class="k-btn k-btn-secondary k-btn-sm" title="Solo en los huecos libres">Rellenar huecos</button>
+                                <?php if ($numComidas > 0): ?>
+                                    <button type="submit" name="modo" value="sustituir" class="k-btn k-btn-ghost k-btn-sm" onclick="return confirm('Se quitarán las <?= $numComidas ?> comidas de esta semana y se pondrán las de la plantilla. ¿Seguir?')">Sustituir la semana</button>
+                                <?php endif; ?>
+                            </form>
+                        </div>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php elseif (!$plantillas): ?>
+            <p class="mt-5 text-sm k-muted"><?= $numComidas > 0 ? 'Aún no tienes plantillas: guarda esta semana para empezar.' : 'Aún no tienes plantillas. Cuando una semana tenga comidas, podrás guardarla aquí.' ?></p>
+        <?php endif; ?>
+    </div>
+</div>
 
 <!-- MODAL: RELLENAR LA SEMANA CON IA -->
 <div id="modalRellenarSemana" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloRellenar">

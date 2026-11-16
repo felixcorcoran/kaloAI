@@ -219,6 +219,45 @@ function asignarRecetaAlPlan(PDO $pdo, int $userId, int $idReceta, int $diaNumer
     return true;
 }
 
+/** Raciones que se pueden elegir para una comida del plan (½, 1, 1½, 2 y 3). */
+const RACIONES_PLAN = [0.5, 1.0, 1.5, 2.0, 3.0];
+
+/** Raciones válidas o null. Acepta "1,5" y "1.5". Función pura. */
+function racionesValidas($valor): ?float {
+    $numero = (float) str_replace(',', '.', (string) $valor);
+    foreach (RACIONES_PLAN as $permitida) {
+        if (abs($numero - $permitida) < 0.001) return $permitida;
+    }
+    return null;
+}
+
+/** «½ ración», «1 ración», «1½ raciones». Función pura. */
+function textoRaciones(float $raciones): string {
+    $entero = (int) floor($raciones);
+    $medio = abs($raciones - $entero - 0.5) < 0.001;
+    $numero = ($entero > 0 ? (string) $entero : '') . ($medio ? '½' : '');
+    return $numero . ($raciones > 1 ? ' raciones' : ' ración');
+}
+
+/**
+ * Cambia cuántas raciones se comen de una comida del plan. Las calorías del
+ * día, el registro de lo comido y la lista de la compra la multiplican.
+ * Devuelve false si la comida no es de esta persona o las raciones no son válidas.
+ */
+function cambiarRaciones(PDO $pdo, int $userId, int $idComida, $raciones): bool {
+    $raciones = racionesValidas($raciones);
+    if ($raciones === null) return false;
+    $stmt = $pdo->prepare("UPDATE comida_planificada cp JOIN plan_semanal ps ON ps.id_plan = cp.id_plan
+                           SET cp.raciones = ? WHERE cp.id_comida_planificada = ? AND ps.id_usuario = ?");
+    $stmt->execute([$raciones, $idComida, $userId]);
+    if ($stmt->rowCount() > 0) return true;
+    // Sin cambios (ya tenía esas raciones) también es un éxito si la comida es suya
+    $suya = $pdo->prepare("SELECT 1 FROM comida_planificada cp JOIN plan_semanal ps ON ps.id_plan = cp.id_plan
+                           WHERE cp.id_comida_planificada = ? AND ps.id_usuario = ?");
+    $suya->execute([$idComida, $userId]);
+    return (bool) $suya->fetchColumn();
+}
+
 /**
  * Copia las comidas de una semana en otra, solo en los huecos vacíos (lo que
  * ya hubiera en la semana de destino no se toca). Devuelve cuántas ha copiado.
@@ -235,6 +274,105 @@ function copiarSemana(PDO $pdo, int $userId, string $origen, string $destino): i
                                              WHERE d.id_plan = ? AND d.dia_semana = o.dia_semana AND d.momento_comida = o.momento_comida)");
     $stmt->execute([$idDestino, $idOrigen, $idDestino]);
     return $stmt->rowCount();
+}
+
+/* ---------- Plantillas de semana ---------- */
+
+const PLANTILLAS_MAXIMO = 20;
+
+/** Nombre limpio de una plantilla (1-60 caracteres) o null. Función pura. */
+function nombrePlantillaValido(string $nombre): ?string {
+    $nombre = trim(preg_replace('/\s+/u', ' ', $nombre) ?? '');
+    if ($nombre === '' || mb_strlen($nombre, 'UTF-8') > 60) return null;
+    return $nombre;
+}
+
+/** Plantillas de la persona, de la más nueva a la más antigua, con cuántas comidas y kcal medias por día tienen. */
+function plantillasDe(PDO $pdo, int $userId): array {
+    $stmt = $pdo->prepare("SELECT p.id_plantilla, p.nombre, p.fecha_creacion, COUNT(pc.id_plantilla_comida) AS comidas,
+                                  COALESCE(SUM(r.calorias_por_racion * pc.raciones), 0) / 7 AS kcal_dia
+                           FROM plantilla_semana p
+                           LEFT JOIN plantilla_comida pc ON pc.id_plantilla = p.id_plantilla
+                           LEFT JOIN receta r ON r.id_receta = pc.id_receta
+                           WHERE p.id_usuario = ? GROUP BY p.id_plantilla ORDER BY p.fecha_creacion DESC, p.id_plantilla DESC");
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Guarda las comidas de una semana como plantilla. Si ya hay una con ese
+ * nombre, la sustituye. Devuelve el id de la plantilla, o un texto con el error.
+ */
+function guardarPlantilla(PDO $pdo, int $userId, string $semana, string $nombre): int|string {
+    $nombre = nombrePlantillaValido($nombre);
+    if ($nombre === null) return 'Ponle un nombre a la plantilla (máximo 60 caracteres).';
+    $idPlan = obtenerPlan($pdo, $userId, $semana);
+    $cuantas = 0;
+    if ($idPlan) {
+        $c = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada WHERE id_plan = ?");
+        $c->execute([$idPlan]);
+        $cuantas = (int) $c->fetchColumn();
+    }
+    if ($cuantas === 0) return 'Esta semana no tiene comidas que guardar.';
+
+    $existente = $pdo->prepare("SELECT id_plantilla FROM plantilla_semana WHERE id_usuario = ? AND nombre = ?");
+    $existente->execute([$userId, $nombre]);
+    $idExistente = $existente->fetchColumn();
+    if (!$idExistente && count(plantillasDe($pdo, $userId)) >= PLANTILLAS_MAXIMO) {
+        return 'Ya tienes ' . PLANTILLAS_MAXIMO . ' plantillas. Borra alguna para guardar otra.';
+    }
+
+    $propia = !$pdo->inTransaction();
+    if ($propia) $pdo->beginTransaction();
+    try {
+        if ($idExistente) {
+            $idPlantilla = (int) $idExistente;
+            $pdo->prepare("DELETE FROM plantilla_comida WHERE id_plantilla = ?")->execute([$idPlantilla]);
+            $pdo->prepare("UPDATE plantilla_semana SET fecha_creacion = CURRENT_TIMESTAMP WHERE id_plantilla = ?")->execute([$idPlantilla]);
+        } else {
+            $pdo->prepare("INSERT INTO plantilla_semana (id_usuario, nombre) VALUES (?, ?)")->execute([$userId, $nombre]);
+            $idPlantilla = (int) $pdo->lastInsertId();
+        }
+        $pdo->prepare("INSERT INTO plantilla_comida (id_plantilla, id_receta, dia_semana, momento_comida, raciones)
+                       SELECT ?, id_receta, dia_semana, momento_comida, COALESCE(raciones, 1) FROM comida_planificada WHERE id_plan = ?")
+            ->execute([$idPlantilla, $idPlan]);
+        if ($propia) $pdo->commit();
+        return $idPlantilla;
+    } catch (Throwable $e) {
+        if ($propia && $pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * Pone las comidas de una plantilla en una semana. Con $sustituir, vacía antes
+ * la semana; si no, solo rellena los huecos libres. Devuelve cuántas comidas
+ * ha puesto, o null si la plantilla no es de esta persona.
+ */
+function aplicarPlantilla(PDO $pdo, int $userId, int $idPlantilla, string $semana, bool $sustituir = false): ?int {
+    $suya = $pdo->prepare("SELECT 1 FROM plantilla_semana WHERE id_plantilla = ? AND id_usuario = ?");
+    $suya->execute([$idPlantilla, $userId]);
+    if (!$suya->fetchColumn()) return null;
+
+    $idPlan = obtenerOCrearPlan($pdo, $userId, $semana);
+    if ($sustituir) {
+        $pdo->prepare("DELETE FROM comida_planificada WHERE id_plan = ?")->execute([$idPlan]);
+    }
+    $stmt = $pdo->prepare("INSERT INTO comida_planificada (id_plan, id_receta, dia_semana, momento_comida, raciones)
+                           SELECT ?, pc.id_receta, pc.dia_semana, pc.momento_comida, pc.raciones
+                           FROM plantilla_comida pc
+                           WHERE pc.id_plantilla = ?
+                             AND NOT EXISTS (SELECT 1 FROM comida_planificada d
+                                             WHERE d.id_plan = ? AND d.dia_semana = pc.dia_semana AND d.momento_comida = pc.momento_comida)");
+    $stmt->execute([$idPlan, $idPlantilla, $idPlan]);
+    return $stmt->rowCount();
+}
+
+/** Borra una plantilla de esta persona. */
+function borrarPlantilla(PDO $pdo, int $userId, int $idPlantilla): bool {
+    $stmt = $pdo->prepare("DELETE FROM plantilla_semana WHERE id_plantilla = ? AND id_usuario = ?");
+    $stmt->execute([$idPlantilla, $userId]);
+    return $stmt->rowCount() > 0;
 }
 
 /**
@@ -375,6 +513,8 @@ function calcularListaCompra(array $necesarios, array $inventario): array {
     foreach ($necesidad as $clave => $item) {
         $tengo = $despensa[$clave] ?? 0.0;
         $falta = round($item['cantidad'] - $tengo, 2);
+        // Lo que se compra por unidades va entero (con media ración no se compran 13,5 huevos)
+        if ($falta > 0 && $item['unidad'] === 'unidad') $falta = ceil($falta - 0.001);
         if ($falta > 0) {
             $lista[] = [
                 'nombre'        => $item['nombre'],
@@ -489,4 +629,80 @@ function multiplicarRaciones(array $necesarios, int $comensales): array {
         $fila['raciones'] = (float) ($fila['raciones'] ?? 1) * $comensales;
         return $fila;
     }, $necesarios);
+}
+
+/**
+ * Lista de la compra de una semana: lo que piden las recetas del plan (por las
+ * raciones de cada comida y por las personas de la casa) menos lo que ya hay
+ * en la despensa. Devuelve ['lista' => [...], 'necesarios' => [...], 'comensales' => n].
+ */
+function listaCompraDeSemana(PDO $pdo, int $userId, string $semana): array {
+    $stmtNec = $pdo->prepare("SELECT dr.nombre_ingrediente, dr.cantidad, cp.raciones, dr.unidad
+                              FROM comida_planificada cp
+                              JOIN detalle_receta dr ON cp.id_receta = dr.id_receta
+                              JOIN plan_semanal ps ON cp.id_plan = ps.id_plan
+                              WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ?");
+    $stmtNec->execute([$userId, $semana]);
+    $comensales = comensalesDe($pdo, $userId);
+    $necesarios = multiplicarRaciones($stmtNec->fetchAll(PDO::FETCH_ASSOC), $comensales);
+
+    $stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
+    $stmtInv->execute([$userId]);
+    return [
+        'lista'      => calcularListaCompra($necesarios, $stmtInv->fetchAll(PDO::FETCH_ASSOC)),
+        'necesarios' => $necesarios,
+        'comensales' => $comensales,
+    ];
+}
+
+/** Cantidad legible: «1,5 kg» en vez de «1500 g», «3 unidades». Función pura. */
+function formatearCantidad(float $cantidad, string $unidad): string {
+    if ($unidad === 'g' && $cantidad >= 1000) { $cantidad /= 1000; $unidad = 'kg'; }
+    if ($unidad === 'ml' && $cantidad >= 1000) { $cantidad /= 1000; $unidad = 'L'; }
+    if ($unidad === 'unidad') $unidad = $cantidad == 1 ? 'unidad' : 'unidades';
+    $numero = rtrim(rtrim(number_format($cantidad, 2, ',', '.'), '0'), ',');
+    return $numero . ' ' . $unidad;
+}
+
+/* ---------- Lista de la compra compartida (enlace de solo lectura) ---------- */
+
+/** ¿Tiene forma de token de lista compartida? (32 caracteres hexadecimales). Función pura. */
+function tokenListaValido(?string $token): bool {
+    return is_string($token) && preg_match('/^[a-f0-9]{32}$/', $token) === 1;
+}
+
+/** Token del enlace activo de esta persona, o null si no comparte su lista. */
+function tokenListaCompartida(PDO $pdo, int $userId): ?string {
+    $stmt = $pdo->prepare("SELECT token FROM lista_compartida WHERE id_usuario = ?");
+    $stmt->execute([$userId]);
+    $token = $stmt->fetchColumn();
+    return $token ?: null;
+}
+
+/** Crea un enlace nuevo (el anterior, si lo había, deja de funcionar). Devuelve el token. */
+function crearListaCompartida(PDO $pdo, int $userId): string {
+    $token = bin2hex(random_bytes(16));
+    $pdo->prepare("INSERT INTO lista_compartida (id_usuario, token) VALUES (?, ?)
+                   ON DUPLICATE KEY UPDATE token = VALUES(token), fecha_creacion = CURRENT_TIMESTAMP, ultima_visita = NULL")
+        ->execute([$userId, $token]);
+    return $token;
+}
+
+/** Deja de compartir: el enlace deja de funcionar. */
+function dejarDeCompartirLista(PDO $pdo, int $userId): void {
+    $pdo->prepare("DELETE FROM lista_compartida WHERE id_usuario = ?")->execute([$userId]);
+}
+
+/** Dueño de un enlace (id y primer nombre), o null si el enlace no existe o la cuenta está desactivada. */
+function duenoListaCompartida(PDO $pdo, ?string $token): ?array {
+    if (!tokenListaValido($token)) return null;
+    $stmt = $pdo->prepare("SELECT l.id_usuario, p.nombre FROM lista_compartida l
+                           JOIN usuario u ON u.id_usuario = l.id_usuario AND u.activo = 1
+                           LEFT JOIN perfil p ON p.id_usuario = l.id_usuario
+                           WHERE l.token = ?");
+    $stmt->execute([$token]);
+    $fila = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$fila) return null;
+    $pdo->prepare("UPDATE lista_compartida SET ultima_visita = CURRENT_TIMESTAMP WHERE id_usuario = ?")->execute([$fila['id_usuario']]);
+    return ['id_usuario' => (int) $fila['id_usuario'], 'nombre' => trim(explode(' ', trim((string) $fila['nombre']))[0])];
 }

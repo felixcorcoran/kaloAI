@@ -74,23 +74,88 @@ function crearNota(PDO $pdo, int $nutriId, int $pacienteId, string $texto): ?str
     return null;
 }
 
-/** Borra una nota escrita por este nutricionista. */
+/** Borra una nota escrita por este nutricionista (no las respuestas del paciente). */
 function borrarNota(PDO $pdo, int $nutriId, int $idNota): bool {
-    $stmt = $pdo->prepare("DELETE FROM nota_paciente WHERE id_nota = ? AND id_nutricionista = ?");
+    $stmt = $pdo->prepare("DELETE FROM nota_paciente WHERE id_nota = ? AND id_nutricionista = ? AND de_paciente = 0");
     $stmt->execute([$idNota, $nutriId]);
     return $stmt->rowCount() > 0;
 }
 
-/** Notas recibidas por el paciente, de la más nueva a la más antigua, con el nombre de quien la escribe. */
+/**
+ * Mensajes entre el paciente y sus nutricionistas, del más nuevo al más
+ * antiguo. «autor» es el nombre de quien lo escribe y «de_paciente» dice si
+ * lo ha escrito el propio paciente.
+ */
 function notasDelPaciente(PDO $pdo, int $pacienteId, int $limite = 20): array {
-    $stmt = $pdo->prepare("SELECT n.id_nota, n.texto, n.leida, n.fecha, n.id_nutricionista, COALESCE(p.nombre, 'Tu nutricionista') AS autor
-                           FROM nota_paciente n LEFT JOIN perfil p ON p.id_usuario = n.id_nutricionista
-                           WHERE n.id_paciente = ? ORDER BY n.fecha DESC, n.id_nota DESC LIMIT " . max(1, min(100, $limite)));
+    $stmt = $pdo->prepare("SELECT n.id_nota, n.texto, n.leida, n.fecha, n.id_nutricionista, n.de_paciente,
+                                  CASE WHEN n.de_paciente = 1 THEN COALESCE(pp.nombre, 'Paciente')
+                                       ELSE COALESCE(pn.nombre, 'Tu nutricionista') END AS autor
+                           FROM nota_paciente n
+                           LEFT JOIN perfil pn ON pn.id_usuario = n.id_nutricionista
+                           LEFT JOIN perfil pp ON pp.id_usuario = n.id_paciente
+                           WHERE n.id_paciente = ? ORDER BY n.fecha DESC, n.id_nota DESC LIMIT " . max(1, min(200, $limite)));
     $stmt->execute([$pacienteId]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-/** Marca como leídas todas las notas del paciente. */
+/** Marca como leídas las notas que el paciente ha recibido. */
 function marcarNotasLeidas(PDO $pdo, int $pacienteId): void {
-    $pdo->prepare("UPDATE nota_paciente SET leida = 1 WHERE id_paciente = ? AND leida = 0")->execute([$pacienteId]);
+    $pdo->prepare("UPDATE nota_paciente SET leida = 1 WHERE id_paciente = ? AND de_paciente = 0 AND leida = 0")->execute([$pacienteId]);
+}
+
+/** Notas del nutricionista que el paciente aún no ha leído. */
+function notasSinLeerDelPaciente(PDO $pdo, int $pacienteId): int {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM nota_paciente WHERE id_paciente = ? AND de_paciente = 0 AND leida = 0");
+    $stmt->execute([$pacienteId]);
+    return (int) $stmt->fetchColumn();
+}
+
+/** Nutricionista actual del paciente (id) o null. */
+function nutricionistaDe(PDO $pdo, int $pacienteId): ?int {
+    $stmt = $pdo->prepare("SELECT id_nutricionista FROM perfil WHERE id_usuario = ?");
+    $stmt->execute([$pacienteId]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int) $id : null;
+}
+
+/**
+ * El paciente responde a su nutricionista actual. Devuelve el mensaje de error o null.
+ * Como mucho un mensaje cada 10 segundos, para que un doble clic no lo duplique.
+ */
+function responderNota(PDO $pdo, int $pacienteId, string $texto): ?string {
+    $texto = trim(preg_replace("/\r\n?/", "\n", $texto));
+    if ($texto === '') return 'Escribe tu respuesta.';
+    if (mb_strlen($texto, 'UTF-8') > NOTA_MAX_CARACTERES) return 'El mensaje es demasiado largo (máximo ' . NOTA_MAX_CARACTERES . ' caracteres).';
+    $nutriId = nutricionistaDe($pdo, $pacienteId);
+    if (!$nutriId) return 'Ya no tienes nutricionista: no hay a quién enviarlo.';
+
+    $reciente = $pdo->prepare("SELECT 1 FROM nota_paciente WHERE id_paciente = ? AND de_paciente = 1 AND texto = ?
+                               AND fecha > (CURRENT_TIMESTAMP - INTERVAL 10 SECOND)");
+    $reciente->execute([$pacienteId, $texto]);
+    if ($reciente->fetchColumn()) return null; // el mismo mensaje enviado dos veces
+
+    $pdo->prepare("INSERT INTO nota_paciente (id_nutricionista, id_paciente, texto, de_paciente) VALUES (?, ?, ?, 1)")
+        ->execute([$nutriId, $pacienteId, $texto]);
+    return null;
+}
+
+/** El paciente borra uno de sus propios mensajes. */
+function borrarRespuesta(PDO $pdo, int $pacienteId, int $idNota): bool {
+    $stmt = $pdo->prepare("DELETE FROM nota_paciente WHERE id_nota = ? AND id_paciente = ? AND de_paciente = 1");
+    $stmt->execute([$idNota, $pacienteId]);
+    return $stmt->rowCount() > 0;
+}
+
+/** Marca como leídas las respuestas de un paciente a este nutricionista. */
+function marcarRespuestasLeidas(PDO $pdo, int $nutriId, int $pacienteId): void {
+    $pdo->prepare("UPDATE nota_paciente SET leida = 1 WHERE id_nutricionista = ? AND id_paciente = ? AND de_paciente = 1 AND leida = 0")
+        ->execute([$nutriId, $pacienteId]);
+}
+
+/** Respuestas sin leer por paciente: [id_paciente => n]. */
+function respuestasSinLeer(PDO $pdo, int $nutriId): array {
+    $stmt = $pdo->prepare("SELECT id_paciente, COUNT(*) FROM nota_paciente
+                           WHERE id_nutricionista = ? AND de_paciente = 1 AND leida = 0 GROUP BY id_paciente");
+    $stmt->execute([$nutriId]);
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_KEY_PAIR));
 }

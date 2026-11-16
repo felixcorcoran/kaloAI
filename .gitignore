@@ -24,3 +24,5 @@ node_modules/
 
 # Marca local de migraciones aplicadas (core/migraciones.php)
 core/.migraciones_aplicadas
+# Semana de la que ya se enviaron los resúmenes por correo (core/resumen_semanal.php)
+core/.resumen_semanal

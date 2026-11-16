@@ -106,7 +106,7 @@ Clases de ayuda: `k-strong` (color de título), `k-muted` (texto secundario), `k
 </div>
 ```
 
-En `public/js/main.js`: `abrirModal('miModal')`, `cerrarModal('miModal')` y `confirmar('miModal', () => enviarPost(url, campos))` para confirmaciones. Se cierran solos con Escape, al pulsar fuera o con cualquier `[data-cerrar-modal]`.
+En `public/js/main.js`: `abrirModal('miModal')`, `cerrarModal('miModal')` y `confirmar('miModal', () => enviarPost(url, campos))` para confirmaciones. Se cierran solos con Escape, al pulsar fuera o con cualquier `[data-cerrar-modal]`. Mientras hay uno abierto, el tabulador no sale de él, y al cerrarlo el foco vuelve al elemento que lo abrió.
 
 El JavaScript nunca depende de clases de estilo: usa `id` y atributos `data-*`. Así se puede cambiar el diseño sin romper el comportamiento.
 
@@ -116,3 +116,5 @@ El JavaScript nunca depende de clases de estilo: usa `id` y atributos `data-*`. 
 - Los campos llevan `<label for>`; si la etiqueta no debe verse, `sr-only`.
 - Para ocultar, el atributo `hidden` (gana siempre a cualquier clase).
 - Los colores de texto cumplen contraste en claro y oscuro; no pongas texto sobre `--k-brand-soft` con un color más claro que `--k-brand-text`.
+- Cada gráfica (`<canvas>`) lleva `role="img"` y un `aria-label` que diga lo esencial («Evolución del peso, de 66,8 a 64,5 kg»), y debajo sus datos en tabla con `tablaDatos()` (`views/templates/tabla_datos.php`): `<?= tablaDatos('Peso por fecha', ['Fecha', 'Peso'], $filas) ?>`.
+- Una página con gráficas pone `$usaGraficas = true` antes de incluir el pie: solo entonces se carga Chart.js.

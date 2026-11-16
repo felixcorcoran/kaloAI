@@ -459,7 +459,10 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
 
     <?php if (empty($impersonando)):
         $avisoCuenta = $_SESSION['aviso_cuenta'] ?? null;
-        unset($_SESSION['aviso_cuenta']); ?>
+        unset($_SESSION['aviso_cuenta']);
+        $stmtRes = $pdo->prepare("SELECT resumen_semanal FROM perfil WHERE id_usuario = ?");
+        $stmtRes->execute([$userId]);
+        $resumenActivo = (bool) $stmtRes->fetchColumn(); ?>
         <!-- TU CUENTA: tus datos son tuyos -->
         <section id="cuenta" class="k-card k-card-pad mt-10 scroll-mt-6">
             <div class="flex items-start gap-3">
@@ -470,9 +473,17 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
                 </div>
             </div>
             <?php if ($avisoCuenta): [$tipoAviso, $textoAviso] = $avisoCuenta; ?>
-                <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mt-5" role="alert"><?= icono('alert') ?><p><?= e($textoAviso) ?></p></div>
+                <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mt-5" role="<?= $tipoAviso === 'ok' ? 'status' : 'alert' ?>"><?= icono($tipoAviso === 'ok' ? 'check' : 'alert') ?><p><?= e($textoAviso) ?></p></div>
             <?php endif; ?>
-            <div class="mt-5 grid gap-3 sm:grid-cols-2">
+            <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <form method="POST" action="cuenta.php" class="k-subtle m-0 flex flex-col rounded-2xl p-4">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="accion" value="resumen">
+                    <input type="hidden" name="activar" value="<?= $resumenActivo ? '0' : '1' ?>">
+                    <p class="flex items-center gap-2 font-medium k-strong">Resumen semanal por correo <?php if ($resumenActivo): ?><span class="k-badge k-badge-ok">Activado</span><?php endif; ?></p>
+                    <p class="mt-1 flex-1 text-sm k-muted">Cada lunes: lo que comiste frente a tu objetivo, tu peso y un enlace para preparar la semana.</p>
+                    <button type="submit" class="k-btn <?= $resumenActivo ? 'k-btn-ghost' : 'k-btn-secondary' ?> mt-4 self-start"><?= icono('mail') ?><?= $resumenActivo ? 'Desactivar' : 'Activar' ?></button>
+                </form>
                 <form method="POST" action="cuenta.php" class="k-subtle m-0 flex flex-col rounded-2xl p-4">
                     <?= campoCsrf() ?>
                     <input type="hidden" name="accion" value="descargar">
