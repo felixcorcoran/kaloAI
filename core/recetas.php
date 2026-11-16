@@ -411,3 +411,49 @@ function sumarAlInventario(PDO $pdo, int $userId, string $nombre, float $cantida
     $pdo->prepare("INSERT INTO inventario (id_usuario, nombre_ingrediente, cantidad, unidad) VALUES (?, ?, ?, ?)")
         ->execute([$userId, mb_substr($nombre, 0, 200), round($cantidad, 3), mb_substr($unidad, 0, 50) ?: 'unidad']);
 }
+
+/**
+ * SECCIONES DEL SÚPER para ordenar la lista de la compra.
+ * El orden es el de un recorrido típico por la tienda.
+ */
+const SECCIONES_COMPRA = [
+    'Frutas y verduras'          => '🥬',
+    'Carne y pescado'            => '🍗',
+    'Huevos y lácteos'           => '🥚',
+    'Pan, cereales y pasta'      => '🍞',
+    'Legumbres y conservas'      => '🥫',
+    'Frutos secos y semillas'    => '🥜',
+    'Aceites, salsas y especias' => '🧂',
+    'Otros'                      => '🛒',
+];
+
+/**
+ * Sección del súper de un producto, por palabras clave (sin tildes, en
+ * singular o plural). Las reglas van en un orden pensado para los casos
+ * dudosos: «tomate triturado» es conserva, «salsa de tomate» es salsa,
+ * «bebida de avena» va con los lácteos y «crema de cacahuete» con los frutos secos.
+ * Función pura.
+ */
+function seccionProducto(string $nombre): string {
+    static $reglas = [
+        ['Legumbres y conservas', 'lata|latas|conserva|en bote|triturado|tomate frito|atun|garbanzos?|lentejas?|alubias?|judias? (blancas?|rojas?|pintas?)|frijol(es)?|soja|tofu|tempeh|edamame|hummus|maiz dulce'],
+        ['Frutos secos y semillas', 'nuez|nueces|almendras?|cacahuetes?|anacardos?|pistachos?|avellanas?|pipas?|semillas?|chia|lino|sesamo|crema de cacahuete'],
+        ['Aceites, salsas y especias', 'aceite|vinagre|sal|pimienta|especias?|oregano|comino|pimenton|curry|canela|curcuma|salsa|mostaza|mayonesa|ketchup|tomate frito|caldo|miel|azucar|edulcorante|levadura|vainilla|nuez moscada|tomillo|romero|laurel'],
+        ['Carne y pescado', 'pollo|pavo|ternera|cerdo|lomo|jamon|chorizo|salchichas?|carne|hamburguesas?|solomillo|pechugas?|muslos?|conejo|cordero|bacon|panceta|pescado|salmon|merluza|bacalao|dorada|lubina|sardinas?|boquerones?|gambas?|langostinos?|mejillones?|calamar(es)?|pulpo|marisco|sepia|rape|trucha|caballa'],
+        ['Huevos y lácteos', 'huevos?|claras?|leche|yogur(es)?|queso|mantequilla|nata|kefir|requeson|bebida|cuajada'],
+        ['Pan, cereales y pasta', 'pan|panes|tostadas?|arroz|pasta|espaguetis?|macarrones|fideos?|avena|quinoa|cuscus|harina|cereales?|tortillas? de trigo|wraps?|galletas?|copos|bulgur|biscotes?'],
+        ['Frutas y verduras', 'tomates?|lechugas?|cebollas?|ajos?|pimientos?|zanahorias?|calabacin(es)?|berenjenas?|espinacas?|brocoli|coliflor|patatas?|boniatos?|pepinos?|calabaza|champinones|setas?|puerros?|apio|rucula|canonigos|aguacates?|platanos?|manzanas?|peras?|naranjas?|limon(es)?|lima|fresas?|frutos rojos|arandanos?|uvas?|kiwis?|mango|pina|melon|sandia|melocoton(es)?|verduras?|frutas?|perejil|cilantro|albahaca|jengibre|judias? verdes?|guisantes?|hierbabuena|menta|alcachofas?|esparragos?'],
+    ];
+    $n = normalizarIngrediente($nombre);
+    foreach ($reglas as [$seccion, $patron]) {
+        if (preg_match('/\b(' . $patron . ')\b/u', $n)) return $seccion;
+    }
+    return 'Otros';
+}
+
+/** Agrupa la lista de la compra por secciones, en el orden de SECCIONES_COMPRA. Función pura. */
+function agruparPorSeccion(array $lista): array {
+    $grupos = array_fill_keys(array_keys(SECCIONES_COMPRA), []);
+    foreach ($lista as $item) $grupos[seccionProducto($item['nombre'])][] = $item;
+    return array_filter($grupos);
+}

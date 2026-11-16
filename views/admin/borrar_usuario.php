@@ -8,6 +8,7 @@
 session_start();
 require_once __DIR__ . '/../../core/configuracion.php';
 require_once __DIR__ . '/../../core/utilidades.php';
+require_once __DIR__ . '/../../core/cuenta.php';
 
 /* ==========================================================================
    SEGURIDAD Y CONTROL DE ACCESO
@@ -53,35 +54,8 @@ try {
     $correo = e($usuarioAfectado['correo']);
     $detalleLog = "<b>ELIMINACIÓN</b>: Se eliminó permanentemente al usuario <b>$nombre</b> ($correo)";
 
-    $pdo->beginTransaction();
-
-    // 2. Sus recetas: la clave foránea las dejaría sin dueño (SET NULL), así que
-    //    se apuntan antes y se borran después de borrar al usuario
-    $stmtRecetas = $pdo->prepare("SELECT id_receta FROM receta WHERE id_usuario_creador = ?");
-    $stmtRecetas->execute([$idABorrar]);
-    $idsRecetas = $stmtRecetas->fetchAll(PDO::FETCH_COLUMN);
-
-    // 3. El usuario. Las claves foráneas borran en cascada su perfil, inventario,
-    //    alergias, progreso, plan semanal (y sus comidas) y solicitudes de vínculo,
-    //    y desvinculan a sus pacientes si era nutricionista.
-    //    Las solicitudes se borran a mano por si la base de datos aún no tiene la
-    //    migración 001 (sin ella, la del nutricionista no se borra en cascada).
-    $pdo->prepare("DELETE FROM solicitudes_vinculacion WHERE id_nutricionista = ? OR id_paciente = ?")
-        ->execute([$idABorrar, $idABorrar]);
-    $pdo->prepare("DELETE FROM usuario WHERE id_usuario = ?")->execute([$idABorrar]);
-
-    if ($idsRecetas) {
-        $marcas = implode(',', array_fill(0, count($idsRecetas), '?'));
-        // Por si alguna receta suya seguía en el plan de otra persona
-        $pdo->prepare("DELETE FROM comida_planificada WHERE id_receta IN ($marcas)")->execute($idsRecetas);
-        // detalle_receta se borra en cascada
-        $pdo->prepare("DELETE FROM receta WHERE id_receta IN ($marcas)")->execute($idsRecetas);
-    }
-
-    // 4. Registro en el log de actividad del panel
-    $pdo->prepare("INSERT INTO logs_actividad (detalle) VALUES (?)")->execute([$detalleLog]);
-
-    $pdo->commit();
+    // 2. Borrado de la cuenta con todos sus datos (core/cuenta.php)
+    borrarCuenta($pdo, $idABorrar, $detalleLog);
 
     header("Location: dashboard_admin.php?msg=borrado_exitoso");
     exit;

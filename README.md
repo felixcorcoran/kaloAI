@@ -16,7 +16,10 @@ Plataforma de nutrición con recetas generadas por IA según las calorías, los 
 - **Rellenar la semana con IA:** en una sola llamada, la IA propone varias recetas para cada comida elegida y se reparten por los huecos libres del plan, sin tocar lo ya planificado ni pasar del objetivo diario de calorías.
 - **Lo que se come de verdad:** cada comida del plan se marca como «Hecho» y lo que se toma fuera del plan se apunta a mano (la IA puede estimar sus calorías). El panel «Hoy» y la gráfica de la semana comparan lo planificado con lo comido, y el nutricionista ve cuántos días apunta cada paciente.
 - **Plan por semanas:** cada semana tiene su plan; se puede volver a las pasadas (con lo que se comió cada día), preparar las siguientes y copiar la semana anterior en los huecos libres.
-- **Inventario y lista de la compra** de esta semana o de la que viene; la lista se descarga en PDF (Dompdf).
+- **Inventario y lista de la compra** de esta semana o de la que viene, agrupada por secciones del súper; la lista se descarga en PDF (Dompdf).
+- **Recetas escritas a mano:** la IA puede calcular sus calorías y macros por ración a partir de los ingredientes.
+- **Tu cuenta:** cada persona puede descargar todos sus datos en JSON o borrar su cuenta (con su contraseña).
+- **App instalable (PWA):** se puede añadir a la pantalla de inicio del móvil; sin conexión muestra un aviso. El service worker solo guarda estilos, scripts e iconos, nunca páginas con datos personales.
 - **Progreso:** gráficos de peso y macros con Chart.js.
 - **Roles:** el nutricionista vincula pacientes y puede gestionar su cuenta en un modo aparte, con una barra que lo indica; el administrador gestiona usuarios.
 - **Modo claro y oscuro:** sigue el tema del sistema o el que elijas con el botón de la cabecera, y lo recuerda.

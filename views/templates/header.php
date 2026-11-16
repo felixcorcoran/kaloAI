@@ -104,6 +104,15 @@ $pintarEnlace = function (array $seccion) use ($paginaActual) {
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
 
+    <!-- App instalable (PWA) e iconos -->
+    <link rel="manifest" href="<?= BASE_URL ?>manifest.json">
+    <meta name="theme-color" content="#0c0c0e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="KaloAI">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= BASE_URL ?>public/icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="<?= BASE_URL ?>public/icons/apple-touch-icon.png">
+
     <!-- Tipografías: DM Sans (aplicación) e Inter / Plus Jakarta Sans (estilos propios de la portada) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

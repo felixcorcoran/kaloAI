@@ -606,6 +606,38 @@ async function estimarComidaLibre() {
 }
 
 /* ==========================================================================
+   8c. RECETA ESCRITA A MANO: CALORÍAS Y MACROS CON IA
+   ========================================================================== */
+
+async function estimarMacrosReceta() {
+    const ingredientes = document.getElementById('ingredientes').value.trim();
+    const aviso = document.getElementById('macrosRecetaAviso');
+    const boton = document.getElementById('btnMacrosReceta');
+    const avisar = (texto) => { aviso.textContent = texto; aviso.hidden = !texto; };
+    if (!ingredientes) { avisar('Escribe primero los ingredientes, uno por línea y con su cantidad.'); document.getElementById('ingredientes').focus(); return; }
+
+    boton.disabled = true;
+    avisar('Calculando…');
+    try {
+        const datos = new FormData();
+        datos.append('titulo', document.getElementById('titulo').value);
+        datos.append('ingredientes', ingredientes);
+        const respuesta = await fetch('estimar_receta.php', {
+            method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf(), 'Accept': 'application/json' },
+        });
+        const json = await respuesta.json();
+        if (!json.success) { avisar(json.error || 'No se ha podido calcular.'); return; }
+        const campos = { calorias: 'calorias_por_racion', proteinas: 'proteinas_g_por_racion', carbohidratos: 'carbohidratos_g_por_racion', grasas: 'grasas_g_por_racion' };
+        Object.entries(campos).forEach(([clave, id]) => { document.getElementById(id).value = json[clave]; });
+        avisar('Calculado por la IA a partir de los ingredientes: revísalo si conoces las cifras exactas.');
+    } catch (e) {
+        avisar('No se ha podido calcular. Escribe las cifras a mano.');
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+/* ==========================================================================
    9. PORTADA: CARRUSEL DE TESTIMONIOS
    ========================================================================== */
 

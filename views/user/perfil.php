@@ -438,7 +438,61 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
             <button type="submit" class="k-btn k-btn-primary k-btn-lg"><?= icono('check') ?>Guardar y recalcular</button>
         </div>
     </form>
+
+    <?php if (empty($impersonando)):
+        $avisoCuenta = $_SESSION['aviso_cuenta'] ?? null;
+        unset($_SESSION['aviso_cuenta']); ?>
+        <!-- TU CUENTA: tus datos son tuyos -->
+        <section id="cuenta" class="k-card k-card-pad mt-10 scroll-mt-6">
+            <div class="flex items-start gap-3">
+                <span class="k-icon-tile k-tile-indigo"><?= icono('shield') ?></span>
+                <div>
+                    <h2 class="k-section-title">Tu cuenta</h2>
+                    <p class="mt-1 text-sm k-muted">Tus datos son tuyos: puedes llevártelos o borrarlos cuando quieras.</p>
+                </div>
+            </div>
+            <?php if ($avisoCuenta): [$tipoAviso, $textoAviso] = $avisoCuenta; ?>
+                <div class="k-alert k-alert-<?= $tipoAviso === 'ok' ? 'ok' : 'error' ?> mt-5" role="alert"><?= icono('alert') ?><p><?= e($textoAviso) ?></p></div>
+            <?php endif; ?>
+            <div class="mt-5 grid gap-3 sm:grid-cols-2">
+                <form method="POST" action="cuenta.php" class="k-subtle m-0 flex flex-col rounded-2xl p-4">
+                    <?= campoCsrf() ?>
+                    <input type="hidden" name="accion" value="descargar">
+                    <p class="font-medium k-strong">Descargar mis datos</p>
+                    <p class="mt-1 flex-1 text-sm k-muted">Perfil, recetas, planes, comidas apuntadas, progreso y despensa en un archivo JSON.</p>
+                    <button type="submit" class="k-btn k-btn-secondary mt-4 self-start"><?= icono('download') ?>Descargar</button>
+                </form>
+                <div class="k-subtle flex flex-col rounded-2xl p-4">
+                    <p class="font-medium k-strong">Borrar mi cuenta</p>
+                    <p class="mt-1 flex-1 text-sm k-muted">Se borran tu cuenta y todos tus datos para siempre. No se puede deshacer.</p>
+                    <button type="button" onclick="abrirModal('modalBorrarCuenta')" class="k-btn k-btn-ghost k-btn-danger-text mt-4 self-start"><?= icono('trash') ?>Borrar mi cuenta</button>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
 </div>
+
+<?php if (empty($impersonando)): ?>
+<!-- MODAL: BORRAR LA CUENTA -->
+<div id="modalBorrarCuenta" class="k-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tituloBorrarCuenta">
+    <div class="k-modal-backdrop"></div>
+    <form method="POST" action="cuenta.php" class="k-modal-panel max-w-sm">
+        <?= campoCsrf() ?>
+        <input type="hidden" name="accion" value="borrar">
+        <span class="k-icon-tile k-tile-danger"><?= icono('alert') ?></span>
+        <h2 id="tituloBorrarCuenta" class="k-modal-title mt-4">¿Borrar tu cuenta para siempre?</h2>
+        <p class="mt-2 text-sm k-muted">Se borrarán tu perfil, tus recetas, tus planes, lo que has apuntado, tu progreso y tu despensa. Si quieres conservarlos, descárgalos antes.</p>
+        <div class="mt-5">
+            <label for="contrasenaBorrar" class="k-label">Escribe tu contraseña para confirmarlo</label>
+            <input id="contrasenaBorrar" name="contrasena" type="password" required autocomplete="current-password" class="k-input" data-autofocus>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+            <button type="button" class="k-btn k-btn-secondary" data-cerrar-modal>Cancelar</button>
+            <button type="submit" class="k-btn k-btn-danger">Borrar mi cuenta</button>
+        </div>
+    </form>
+</div>
+<?php endif; ?>
 
 <script>
     // Datos para la lista de restricciones (main.js)

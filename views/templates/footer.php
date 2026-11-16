@@ -76,5 +76,11 @@
         Chart.defaults.borderColor = getComputedStyle(document.documentElement).getPropertyValue('--k-border').trim() || 'rgba(0,0,0,0.07)';
     }
 </script>
+<script>
+    // App instalable: el service worker solo guarda estilos, scripts e iconos (nunca páginas con datos)
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => navigator.serviceWorker.register('<?= BASE_URL ?>sw.js').catch(() => {}));
+    }
+</script>
 </body>
 </html>

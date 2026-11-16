@@ -82,6 +82,9 @@ include_once __DIR__ . '/../templates/header.php';
             <p class="k-subtitle">Entra para ver tu plan de hoy.</p>
         </div>
 
+        <?php if (isset($_GET['cuenta_borrada'])): ?>
+            <div class="k-alert k-alert-ok mb-4"><?= icono('check') ?><p>Tu cuenta y todos tus datos se han borrado. Gracias por usar KaloAI.</p></div>
+        <?php endif; ?>
         <?php if (isset($_GET['loggedout'])): ?>
             <div class="k-alert k-alert-ok mb-4"><?= icono('check') ?><p>Has cerrado sesión.</p></div>
         <?php endif; ?>

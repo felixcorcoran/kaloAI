@@ -128,9 +128,13 @@ $formatear = function (float $cantidad, string $unidad): string {
                     <h2 class="k-section-title">Productos</h2>
                     <p class="text-xs k-muted">Al marcarlo como comprado, pasa a la despensa.</p>
                 </div>
-                <ul class="k-list">
-                    <?php foreach ($listaCompra as $item):
-                        $pctTengo = $item['total_recetas'] > 0 ? min(100, round($item['en_despensa'] / $item['total_recetas'] * 100)) : 0; ?>
+                <?php foreach (agruparPorSeccion($listaCompra) as $seccion => $productos): ?>
+                    <h3 class="flex items-center gap-2 border-t px-5 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider k-muted sm:px-6" style="border-color: var(--k-border);">
+                        <span aria-hidden="true"><?= SECCIONES_COMPRA[$seccion] ?></span><?= e($seccion) ?> <span class="font-normal normal-case tracking-normal">· <?= count($productos) ?></span>
+                    </h3>
+                    <ul class="k-list">
+                        <?php foreach ($productos as $item):
+                            $pctTengo = $item['total_recetas'] > 0 ? min(100, round($item['en_despensa'] / $item['total_recetas'] * 100)) : 0; ?>
                         <li class="flex items-center gap-4 px-5 py-3.5 sm:px-6">
                             <span class="k-icon-tile hidden h-10 w-10 shrink-0 text-sm font-semibold sm:grid" aria-hidden="true"><?= e(mb_strtoupper(mb_substr($item['nombre'], 0, 1))) ?></span>
                             <div class="min-w-0 flex-1">
@@ -150,8 +154,9 @@ $formatear = function (float $cantidad, string $unidad): string {
                                 <button type="submit" class="k-btn k-btn-secondary k-btn-sm" aria-label="Marcar <?= e($item['nombre']) ?> como comprado"><?= icono('check') ?><span class="hidden sm:inline">Comprado</span></button>
                             </form>
                         </li>
-                    <?php endforeach; ?>
-                </ul>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endforeach; ?>
             </section>
 
             <aside class="space-y-6">

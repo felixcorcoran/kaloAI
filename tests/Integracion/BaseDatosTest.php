@@ -189,7 +189,8 @@ final class BaseDatosTest extends TestCase
         $diaHoy = (int) $hoy->format('N') - 1;
         asignarRecetaAlPlan(self::$pdo, self::LAURA, 2, $diaHoy, 'Almuerzo');
         $idComida = (int) $this->valor("SELECT cp.id_comida_planificada FROM comida_planificada cp JOIN plan_semanal ps USING (id_plan)
-                                         WHERE ps.id_usuario = ? AND cp.dia_semana = ? AND cp.momento_comida = 'Almuerzo'", [self::LAURA, $diaHoy]);
+                                         WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.dia_semana = ? AND cp.momento_comida = 'Almuerzo'",
+                                         [self::LAURA, lunesDe($hoy->format('Y-m-d')), $diaHoy]);
 
         $id = registrarComidaPlanificada(self::$pdo, self::LAURA, $idComida, $hoy->format('Y-m-d'));
         $this->assertNotNull($id);
@@ -297,5 +298,40 @@ final class BaseDatosTest extends TestCase
         $this->assertSame(1, (int) $this->valor("SELECT COUNT(*) FROM plan_semanal WHERE id_usuario = ?", [self::LAURA]));
         $this->assertSame(1, obtenerPlan(self::$pdo, self::LAURA, lunesDe()), 'El plan pasa a ser el de esta semana');
         $this->assertSame(20, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada WHERE id_plan = 1"), 'No se pierde ninguna comida');
+    }
+
+    public function testExportarLosDatosDeLaCuentaSinLaContrasena(): void
+    {
+        $datos = exportarDatosCuenta(self::$pdo, self::LAURA);
+        $this->assertSame('laura@kaloai.test', $datos['cuenta']['correo']);
+        $this->assertSame('Laura Martín', $datos['perfil']['nombre']);
+        $this->assertCount(3, $datos['recetas']);
+        $this->assertNotEmpty($datos['recetas'][0]['ingredientes']);
+        $this->assertCount(2, $datos['planes_semanales'], 'Esta semana y la pasada');
+        $this->assertNotEmpty($datos['comidas_registradas']);
+        $this->assertCount(2, $datos['alergias_y_preferencias']);
+        $json = json_encode($datos);
+        $this->assertStringNotContainsString('contrasena', $json);
+        $this->assertStringNotContainsString('$2y$', $json, 'Ningún hash de contraseña');
+    }
+
+    public function testBorrarLaCuentaBorraTodosSusDatos(): void
+    {
+        $this->assertTrue(borrarCuenta(self::$pdo, self::LAURA, 'baja de prueba'));
+        foreach (['usuario', 'perfil', 'receta' => 'id_usuario_creador', 'plan_semanal', 'registro_comida', 'progreso', 'inventario', 'ingrediente_prohibido'] as $tabla => $columna) {
+            if (is_int($tabla)) { $tabla = $columna; $columna = 'id_usuario'; }
+            $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM $tabla WHERE $columna = ?", [self::LAURA]), $tabla);
+        }
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM comida_planificada"), 'Sus comidas planificadas también');
+        $this->assertSame('baja de prueba', $this->valor("SELECT detalle FROM logs_actividad ORDER BY id_log DESC LIMIT 1"));
+        $this->assertFalse(borrarCuenta(self::$pdo, self::LAURA, 'otra vez'), 'Ya no existe');
+    }
+
+    public function testNoSePuedeBorrarElUltimoAdministrador(): void
+    {
+        $this->assertTrue(esUltimoAdministrador(self::$pdo, 1));
+        $this->assertFalse(esUltimoAdministrador(self::$pdo, self::LAURA), 'No es administradora');
+        self::$pdo->exec("UPDATE usuario SET id_rol = 1 WHERE id_usuario = 2");
+        $this->assertFalse(esUltimoAdministrador(self::$pdo, 1), 'Hay otra cuenta de administración');
     }
 }
