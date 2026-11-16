@@ -90,7 +90,7 @@ include_once __DIR__ . '/../templates/header.php';
         <div>
             <span class="k-pill"><?= icono('users') ?>Panel profesional</span>
             <h1 class="k-title mt-3">Pacientes</h1>
-            <p class="k-subtitle">Entra en la cuenta de un paciente para ajustar su plan, sus recetas y su perfil como si fueras él.</p>
+            <p class="k-subtitle">Sigue su evolución en su ficha, déjale notas y, si hace falta, entra en su cuenta para ajustar su plan.</p>
         </div>
     </div>
 
@@ -165,11 +165,7 @@ include_once __DIR__ . '/../templates/header.php';
                                 </p>
                                 <p class="text-xs k-muted"><?= e($objetivosTexto[$p['objetivo'] ?? ''] ?? 'Sin objetivo') ?></p>
                             </div>
-                            <form method="POST" action="entrar_como_paciente.php" class="m-0 shrink-0">
-                                <?= campoCsrf() ?>
-                                <input type="hidden" name="id_paciente" value="<?= (int) $p['id_usuario'] ?>">
-                                <button type="submit" class="k-btn k-btn-secondary k-btn-sm">Gestionar <?= icono('arrow-right') ?></button>
-                            </form>
+                            <a href="paciente.php?id=<?= (int) $p['id_usuario'] ?>" class="k-btn k-btn-secondary k-btn-sm shrink-0">Ver ficha <?= icono('arrow-right') ?></a>
                         </li>
                     <?php endforeach; ?>
                 </ul>

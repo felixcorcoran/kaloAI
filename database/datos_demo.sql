@@ -123,4 +123,9 @@ INSERT INTO solicitudes_vinculacion (id_nutricionista, id_paciente, estado) VALU
   (2, 3, 'aceptada'),
   (2, 4, 'pendiente');
 
+-- Una nota de Nuria para Laura (ya leída) y otra nueva
+INSERT INTO nota_paciente (id_nutricionista, id_paciente, texto, leida, fecha) VALUES
+  (2, 3, 'Bienvenida, Laura. He revisado tu perfil: vamos con un déficit suave para perder grasa sin pasar hambre.', 1, DATE_SUB(NOW(), INTERVAL 10 DAY)),
+  (2, 3, '¡Buena semana! Has bajado casi medio kilo. Intenta añadir una merienda con proteína los días que entrenas.', 0, DATE_SUB(NOW(), INTERVAL 1 DAY));
+
 INSERT INTO logs_actividad (detalle) VALUES ('Base de datos de ejemplo cargada');

@@ -401,4 +401,35 @@ final class BaseDatosTest extends TestCase
         $this->assertSame(4, comensalesDe(self::$pdo, self::LAURA));
         $this->assertSame(1, comensalesDe(self::$pdo, 999), 'Sin perfil, una persona');
     }
+
+    public function testSoloSuNutricionistaVeLaFichaYDejaNotas(): void
+    {
+        $this->assertTrue(esPacienteDe(self::$pdo, 2, self::LAURA));
+        $this->assertFalse(esPacienteDe(self::$pdo, 2, self::MARCOS), 'Marcos solo tiene una invitación pendiente');
+        $this->assertNotNull(crearNota(self::$pdo, 2, self::MARCOS, 'Hola'), 'No puede escribir a quien no es su paciente');
+        $this->assertNotNull(crearNota(self::$pdo, 2, self::LAURA, '   '), 'Nota vacía');
+        $this->assertNull(crearNota(self::$pdo, 2, self::LAURA, "Bebe más agua.\r\nY camina."));
+
+        $notas = notasDelPaciente(self::$pdo, self::LAURA);
+        $this->assertSame("Bebe más agua.\nY camina.", $notas[0]['texto']);
+        $this->assertSame('Nuria Nutri', $notas[0]['autor']);
+        $this->assertSame(2, (int) $this->valor("SELECT COUNT(*) FROM nota_paciente WHERE id_paciente = 3 AND leida = 0"));
+        marcarNotasLeidas(self::$pdo, self::LAURA);
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM nota_paciente WHERE leida = 0"));
+
+        $this->assertFalse(borrarNota(self::$pdo, 1, (int) $notas[0]['id_nota']), 'Solo quien la escribió la borra');
+        $this->assertTrue(borrarNota(self::$pdo, 2, (int) $notas[0]['id_nota']));
+    }
+
+    public function testDatosDeLaFicha(): void
+    {
+        $d = datosSeguimiento(self::$pdo, self::LAURA);
+        $this->assertSame('Laura Martín', $d['perfil']['nombre']);
+        $this->assertCount(5, $d['progreso']);
+        $this->assertCount(14, $d['consumo']['dias']);
+        $this->assertGreaterThan(0, $d['consumo']['con_registro']);
+        $this->assertSame(19, $d['comidasPlan']);
+        $this->assertCount(8, $d['recientes']);
+        $this->assertCount(2, $d['restricciones']);
+    }
 }

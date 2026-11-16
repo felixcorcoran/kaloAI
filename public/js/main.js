@@ -357,6 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     iniciarProgreso();
     iniciarGraficoPanel();
     iniciarGraficoAdmin();
+    iniciarFichaPaciente();
     iniciarCarrusel();
 });
 
@@ -499,6 +500,33 @@ function iniciarProgreso() {
 /** Valor de una variable CSS del tema actual (claro u oscuro). */
 function varCss(nombre, porDefecto) {
     return getComputedStyle(document.documentElement).getPropertyValue(nombre).trim() || porDefecto;
+}
+
+/** Ficha del paciente (nutricionista): calorías de cada día y peso. */
+function iniciarFichaPaciente() {
+    const datos = window.fichaPaciente;
+    if (!datos || !window.Chart) return;
+    graficoPeso(document.getElementById('pesoPaciente'), datos.progreso || [], true);
+    const lienzo = document.getElementById('consumoPaciente');
+    if (!lienzo) return;
+    const marca = colorMarca();
+    const conjuntos = [{ type: 'bar', label: 'Comido', data: datos.consumo, borderRadius: 8, borderSkipped: false, barPercentage: 0.6,
+                         backgroundColor: datos.consumo.map(v => datos.meta && v > datos.meta * 1.1 ? varCss('--k-danger', '#ef4444') : marca), order: 2 }];
+    if (datos.meta > 0) {
+        conjuntos.push({ type: 'line', label: 'Objetivo', data: datos.consumo.map(() => datos.meta), borderColor: varCss('--k-muted', '#71717a'),
+                         borderDash: [5, 5], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0, order: 1 });
+    }
+    new Chart(lienzo, {
+        data: { labels: datos.dias, datasets: conjuntos },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { label: c => c.raw === null ? 'Sin apuntar' : c.dataset.label + ': ' + Math.round(c.raw) + ' kcal' } } },
+            scales: {
+                x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+                y: { beginAtZero: true, border: { display: false }, ticks: { maxTicksLimit: 4 }, grid: { color: varCss('--k-border', 'rgba(0,0,0,.06)') } },
+            },
+        },
+    });
 }
 
 /** Panel de administración: barras con las altas de cada mes. */

@@ -23,7 +23,7 @@ Plataforma de nutrición con recetas generadas por IA según las calorías, los 
 - **Tu cuenta:** cada persona puede descargar todos sus datos en JSON o borrar su cuenta (con su contraseña).
 - **App instalable (PWA):** se puede añadir a la pantalla de inicio del móvil; sin conexión muestra un aviso. El service worker solo guarda estilos, scripts e iconos, nunca páginas con datos personales.
 - **Progreso:** gráficos de peso y macros con Chart.js.
-- **Roles:** el nutricionista vincula pacientes y puede gestionar su cuenta en un modo aparte, con una barra que lo indica; el administrador gestiona usuarios.
+- **Roles:** el nutricionista vincula pacientes, sigue su evolución en una ficha (peso, lo que come cada día, constancia y plan de la semana) sin entrar en su cuenta, les deja notas que ven en su panel y, si hace falta, gestiona su cuenta en un modo aparte con una barra que lo indica; el administrador gestiona usuarios.
 - **Modo claro y oscuro:** sigue el tema del sistema o el que elijas con el botón de la cabecera, y lo recuerda.
 
 ## Cómo está hecho
@@ -109,7 +109,7 @@ Automático: al fusionar en `main`, GitHub Actions pasa los tests y, si van bien
 
 El despliegue escribe la clave de Resend en `core/secretos.php` (fuera del repositorio) y la sube con lo demás. Opcionales, en la pestaña *Variables*: `CORREO_REMITENTE` (por defecto `KaloAI <no-reply@felixcorcoran.es>`; tiene que ser de un dominio verificado en Resend), `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
 
-**Para escribir una migración nueva:** crea `database/migraciones/007_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
+**Para escribir una migración nueva:** crea `database/migraciones/008_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
 
 ---
 

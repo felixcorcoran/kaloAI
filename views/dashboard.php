@@ -13,6 +13,7 @@ require_once __DIR__ . '/../core/configuracion.php';
 require_once __DIR__ . '/../core/utilidades.php';
 require_once __DIR__ . '/../core/recetas.php';
 require_once __DIR__ . '/../core/registro.php';
+require_once __DIR__ . '/../core/seguimiento.php';
 
 // Validar que la sesión esté activa; de lo contrario, proteger la ruta
 if (!isset($_SESSION['user_id'])) {
@@ -215,6 +216,12 @@ $stmtNutri = $pdo->prepare("SELECT pn.nombre, un.correo FROM perfil p
 $stmtNutri->execute([$userId]);
 $miNutricionista = $stmtNutri->fetch();
 
+// Notas del nutricionista: las nuevas se resaltan y, al verlas, quedan leídas
+// (en modo gestión no se marcan: las está viendo el nutricionista, no el paciente)
+$notasNutri = notasDelPaciente($pdo, (int) $userId, 3);
+$notasSinLeer = count(array_filter($notasNutri, fn($n) => !$n['leida']));
+if ($notasSinLeer && empty($_SESSION['is_impersonating'])) marcarNotasLeidas($pdo, (int) $userId);
+
 // Carga del componente de cabecera (antes de cualquier HTML: el <!DOCTYPE> va primero)
 include_once __DIR__ . '/templates/header.php';
 ?>
@@ -313,6 +320,17 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
             <a href="user/generar_receta.php" class="k-btn k-btn-accent"><?= icono('sparkles') ?>Generar receta</a>
         </div>
     </div>
+
+    <?php if ($notasSinLeer): $nueva = $notasNutri[0]; ?>
+        <!-- NOTA NUEVA DEL NUTRICIONISTA -->
+        <div class="k-card k-card-pad mb-6 flex items-start gap-4" style="border-color: var(--k-brand-line);" role="status">
+            <span class="k-icon-tile k-tile-indigo"><?= icono('mail') ?></span>
+            <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium k-muted"><?= $notasSinLeer === 1 ? 'Nota nueva' : $notasSinLeer . ' notas nuevas' ?> de <?= e(explode(' ', $nueva['autor'])[0]) ?> · <?= e(formatearFecha($nueva['fecha'])) ?></p>
+                <p class="mt-1 whitespace-pre-line leading-relaxed k-strong"><?= e($nueva['texto']) ?></p>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <?php if (!$tienePerfil): ?>
         <div class="k-alert k-alert-info mb-6 items-center">
@@ -546,7 +564,14 @@ $tiposRes = ['Alergia (Riesgo Alto)' => 'k-badge-danger', 'Intolerancia (Riesgo 
                     <span class="k-avatar" aria-hidden="true"><?= e(mb_strtoupper(mb_substr($miNutricionista['nombre'] ?: $miNutricionista['correo'], 0, 1, 'UTF-8'), 'UTF-8')) ?></span>
                     <div class="min-w-0"><p class="truncate font-medium k-strong"><?= e($miNutricionista['nombre'] ?: 'Nutricionista') ?></p><p class="truncate text-sm k-muted"><?= e($miNutricionista['correo']) ?></p></div>
                 </div>
-                <p class="mt-3 text-xs k-muted">Puede ver y ajustar tu plan.</p>
+                <?php if ($notasNutri): $ultimaNota = $notasNutri[0]; ?>
+                    <blockquote class="k-subtle mt-4 rounded-xl p-3 text-sm leading-relaxed">
+                        <p class="line-clamp-3 whitespace-pre-line k-strong">«<?= e($ultimaNota['texto']) ?>»</p>
+                        <footer class="mt-1.5 text-xs k-muted"><?= e(formatearFecha($ultimaNota['fecha'])) ?></footer>
+                    </blockquote>
+                <?php else: ?>
+                    <p class="mt-3 text-xs k-muted">Puede ver tu evolución y ajustar tu plan.</p>
+                <?php endif; ?>
             <?php else: ?>
                 <p class="mt-4 text-sm k-muted">Aún no tienes. Si trabajas con uno, pídele que te invite con tu correo.</p>
             <?php endif; ?>
