@@ -104,6 +104,28 @@ jobs:
           # vendor/ no tiene nada que deba abrirse desde el navegador
           echo "Require all denied" > vendor/.htaccess
 
+      - name: Claves de servicios externos (secretos de GitHub)
+        if: steps.config.outputs.listo == 'si'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CORREO_REMITENTE: ${{ vars.CORREO_REMITENTE }}
+        run: |
+          # core/secretos.php no está en el repositorio: se escribe aquí y se sube
+          # con lo demás. Si el secreto no existe, no se crea y la web funciona
+          # igual (solo que sin enviar correos).
+          if [ -n "$RESEND_API_KEY" ]; then
+            php -r '
+              $lineas = ["<?php", "// Generado por el despliegue a partir de los secretos de GitHub. No editar."];
+              $lineas[] = "define(\"RESEND_API_KEY\", " . var_export(getenv("RESEND_API_KEY"), true) . ");";
+              if (getenv("CORREO_REMITENTE")) $lineas[] = "define(\"CORREO_REMITENTE\", " . var_export(getenv("CORREO_REMITENTE"), true) . ");";
+              file_put_contents("core/secretos.php", implode("\n", $lineas) . "\n");
+            '
+            php -l core/secretos.php
+            echo "Clave de Resend preparada para subir."
+          else
+            echo "::notice::No hay secreto RESEND_API_KEY: la web no enviará correos (recuperar contraseña)."
+          fi
+
       - name: Subir por FTP (solo lo que ha cambiado)
         if: steps.config.outputs.listo == 'si'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

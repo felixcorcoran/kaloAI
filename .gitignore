@@ -1,5 +1,7 @@
 # Configuración sensible: ignoramos el archivo dentro de la carpeta core
 core/configuracion.php
+# Claves que escribe el despliegue a partir de los secretos de GitHub
+core/secretos.php
 
 # Archivos de Composer
 vendor/

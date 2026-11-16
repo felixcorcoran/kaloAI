@@ -12,7 +12,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS migraciones, comida_planificada, detalle_receta, ingrediente_prohibido, inventario,
-    logs_actividad, perfil, plan_semanal, progreso, receta, registro_comida, rol, solicitudes_vinculacion, usuario;
+    logs_actividad, perfil, plan_semanal, progreso, receta, registro_comida, restablecimiento_contrasena, rol, solicitudes_vinculacion, usuario;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -188,6 +188,20 @@ CREATE TABLE registro_comida (
   CONSTRAINT fk_registro_receta FOREIGN KEY (id_receta) REFERENCES receta (id_receta) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Enlaces para recuperar la contraseña (migración 005)
+CREATE TABLE restablecimiento_contrasena (
+  id_restablecimiento INT NOT NULL AUTO_INCREMENT,
+  id_usuario INT NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expira DATETIME NOT NULL,
+  usado TINYINT(1) NOT NULL DEFAULT 0,
+  fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_restablecimiento),
+  UNIQUE KEY uq_restablecimiento_token (token_hash),
+  KEY idx_restablecimiento_usuario (id_usuario, fecha_creacion),
+  CONSTRAINT fk_restablecimiento_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Registro de migraciones (core/migraciones.php). Este esquema ya incluye los
 -- cambios de las que se listan aquí, así que se apuntan como aplicadas.
 CREATE TABLE migraciones (
@@ -200,4 +214,5 @@ INSERT INTO migraciones (nombre) VALUES
   ('001_perfil_y_solicitudes.sql'),
   ('002_texto_sin_escapar.sql'),
   ('003_registro_comida.sql'),
-  ('004_un_plan_por_semana.sql');
+  ('004_un_plan_por_semana.sql'),
+  ('005_restablecer_contrasena.sql');

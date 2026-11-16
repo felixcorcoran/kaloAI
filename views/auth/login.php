@@ -85,6 +85,9 @@ include_once __DIR__ . '/../templates/header.php';
         <?php if (isset($_GET['cuenta_borrada'])): ?>
             <div class="k-alert k-alert-ok mb-4"><?= icono('check') ?><p>Tu cuenta y todos tus datos se han borrado. Gracias por usar KaloAI.</p></div>
         <?php endif; ?>
+        <?php if (isset($_GET['restablecida'])): ?>
+            <div class="k-alert k-alert-ok mb-4"><?= icono('check') ?><p>Contraseña cambiada. Ya puedes entrar con la nueva.</p></div>
+        <?php endif; ?>
         <?php if (isset($_GET['loggedout'])): ?>
             <div class="k-alert k-alert-ok mb-4"><?= icono('check') ?><p>Has cerrado sesión.</p></div>
         <?php endif; ?>
@@ -99,7 +102,10 @@ include_once __DIR__ . '/../templates/header.php';
                 <input id="email" type="email" name="email" required autocomplete="email" class="k-input" placeholder="nombre@correo.com" value="<?= e($_POST['email'] ?? '') ?>">
             </div>
             <div>
-                <label for="password" class="k-label">Contraseña</label>
+                <div class="flex items-baseline justify-between gap-3">
+                    <label for="password" class="k-label">Contraseña</label>
+                    <a href="olvide.php" class="k-link text-xs">¿La has olvidado?</a>
+                </div>
                 <input id="password" type="password" name="password" required autocomplete="current-password" class="k-input">
             </div>
             <button type="submit" class="k-btn k-btn-primary w-full">Entrar</button>

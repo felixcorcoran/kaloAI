@@ -26,3 +26,4 @@ require_once __DIR__ . '/../core/generar_recetas_ia.php';
 require_once __DIR__ . '/../core/registro.php';
 require_once __DIR__ . '/../core/semana_ia.php';
 require_once __DIR__ . '/../core/cuenta.php';
+require_once __DIR__ . '/../core/contrasena.php';

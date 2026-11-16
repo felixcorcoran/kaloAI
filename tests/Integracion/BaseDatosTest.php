@@ -334,4 +334,55 @@ final class BaseDatosTest extends TestCase
         self::$pdo->exec("UPDATE usuario SET id_rol = 1 WHERE id_usuario = 2");
         $this->assertFalse(esUltimoAdministrador(self::$pdo, 1), 'Hay otra cuenta de administración');
     }
+
+    private function pedirEnlace(string $correo, array &$correos): bool
+    {
+        return solicitarRestablecimiento(self::$pdo, $correo, 'https://kaloai.test/', function ($url, $cab, $cuerpo) use (&$correos) {
+            $correos[] = json_decode($cuerpo, true);
+            return [200, '{}'];
+        });
+    }
+
+    public function testRecuperarLaContrasenaDePrincipioAFin(): void
+    {
+        $correos = [];
+        $this->assertTrue($this->pedirEnlace('laura@kaloai.test', $correos));
+        $this->assertCount(1, $correos);
+        $this->assertSame(['laura@kaloai.test'], $correos[0]['to']);
+        $this->assertMatchesRegularExpression('#https://kaloai\.test/views/auth/restablecer\.php\?token=[a-f0-9]{64}#', $correos[0]['text']);
+        preg_match('/token=([a-f0-9]{64})/', $correos[0]['text'], $m);
+        $token = $m[1];
+
+        // En la base de datos solo está el hash
+        $this->assertSame(0, (int) $this->valor("SELECT COUNT(*) FROM restablecimiento_contrasena WHERE token_hash = ?", [$token]));
+        $this->assertSame(self::LAURA, usuarioDelToken(self::$pdo, $token));
+
+        $this->assertTrue(restablecerContrasena(self::$pdo, $token, 'nuevaClave123'));
+        $this->assertTrue(password_verify('nuevaClave123', $this->valor("SELECT contrasena_hash FROM usuario WHERE id_usuario = ?", [self::LAURA])));
+        $this->assertNull(usuarioDelToken(self::$pdo, $token), 'Solo sirve una vez');
+        $this->assertFalse(restablecerContrasena(self::$pdo, $token, 'otraClave123'));
+    }
+
+    public function testElEnlaceCaducaYNoSeRevelaSiElCorreoExiste(): void
+    {
+        $correos = [];
+        $this->assertFalse($this->pedirEnlace('nadie@kaloai.test', $correos), 'Correo sin cuenta');
+        self::$pdo->exec("UPDATE usuario SET activo = 0 WHERE id_usuario = 4");
+        $this->assertFalse($this->pedirEnlace('marcos@kaloai.test', $correos), 'Cuenta bloqueada');
+        $this->assertCount(0, $correos);
+
+        $this->pedirEnlace('laura@kaloai.test', $correos);
+        preg_match('/token=([a-f0-9]{64})/', $correos[0]['text'], $m);
+        self::$pdo->exec("UPDATE restablecimiento_contrasena SET expira = DATE_SUB(NOW(), INTERVAL 1 MINUTE)");
+        $this->assertNull(usuarioDelToken(self::$pdo, $m[1]), 'Caducado');
+        $this->assertNull(usuarioDelToken(self::$pdo, 'no-es-un-token'));
+    }
+
+    public function testComoMuchoTresEnlacesPorHora(): void
+    {
+        $correos = [];
+        for ($i = 0; $i < 3; $i++) $this->assertTrue($this->pedirEnlace('laura@kaloai.test', $correos));
+        $this->assertFalse($this->pedirEnlace('laura@kaloai.test', $correos));
+        $this->assertCount(3, $correos);
+    }
 }
