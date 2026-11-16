@@ -87,6 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pesoKg = filter_var($_POST['peso_kg'] ?? '', FILTER_VALIDATE_FLOAT);
     $nivelActividad = limpiarInput($_POST['nivel_actividad'] ?? '');
     $objetivo = limpiarInput($_POST['objetivo'] ?? ''); 
+    // Para cuántas personas cocina (solo cambia las cantidades de la lista de la compra)
+    $comensales = max(1, min(12, (int) ($_POST['comensales'] ?? 1)));
     
     // Decodificación de restricciones enviadas vía JSON desde el frontend
     $restriccionesJson = $_POST['restricciones_json'] ?? '[]';
@@ -165,10 +167,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $params = [
                 $nombre, $fechaNacimiento, $genero, $alturaCm, $pesoKg, $nivelActividad, $objetivo, 
-                $tdeeCalorias, $proteinasObjetivo, $carbohidratosObjetivo, $grasasObjetivo, $caloriasNetasObjetivo, 
+                $tdeeCalorias, $proteinasObjetivo, $carbohidratosObjetivo, $grasasObjetivo, $caloriasNetasObjetivo, $comensales,
             ];
 
-            $sqlSet = "nombre = ?, fecha_nacimiento = ?, genero = ?, altura_cm = ?, peso_kg = ?, nivel_actividad = ?, objetivo = ?, tdee_calorias = ?, proteinas_objetivo_g = ?, carbohidratos_objetivo_g = ?, grasas_objetivo_g = ?, calorias_netas_objetivo = ?";
+            $sqlSet = "nombre = ?, fecha_nacimiento = ?, genero = ?, altura_cm = ?, peso_kg = ?, nivel_actividad = ?, objetivo = ?, tdee_calorias = ?, proteinas_objetivo_g = ?, carbohidratos_objetivo_g = ?, grasas_objetivo_g = ?, calorias_netas_objetivo = ?, comensales = ?";
             
             if ($profileExists) {
                 $sql = "UPDATE perfil SET {$sqlSet} WHERE id_usuario = ?";
@@ -176,8 +178,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
             } else {
-                $cols = "id_usuario, nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo";
-                $placeholders = implode(', ', array_fill(0, 13, '?'));
+                $cols = "id_usuario, nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo, comensales";
+                $placeholders = implode(', ', array_fill(0, 14, '?'));
                 $sql = "INSERT INTO perfil ({$cols}) VALUES ({$placeholders})";
                 array_unshift($params, $userId); 
                 $stmt = $pdo->prepare($sql);
@@ -218,6 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'carbohidratos_objetivo_g' => $carbohidratosObjetivo,
                 'grasas_objetivo_g' => $grasasObjetivo,
                 'calorias_netas_objetivo' => $caloriasNetasObjetivo,
+                'comensales' => $comensales,
             ];
             $currentRestrictions = $restriccionesArray;
 
@@ -236,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $profileData = array_merge($profileData, [
             'nombre' => $nombre, 'fecha_nacimiento' => $fechaNacimiento, 'genero' => $genero, 
             'altura_cm' => $alturaCm, 'peso_kg' => $pesoKg, 'nivel_actividad' => $nivelActividad,
-            'objetivo' => $objetivo, 
+            'objetivo' => $objetivo, 'comensales' => $comensales,
         ]);
     }
 }
@@ -250,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'GET' || !empty($errors)) {
     try {
         // Carga de metadatos del perfil
-        $stmt = $pdo->prepare("SELECT nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo FROM perfil WHERE id_usuario = ?");
+        $stmt = $pdo->prepare("SELECT nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, calorias_netas_objetivo, comensales FROM perfil WHERE id_usuario = ?");
         $stmt->execute([$userId]);
         $fetchedData = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -406,6 +409,15 @@ if ($fechaNac === '0000-00-00') $fechaNac = '';
                             <option value="<?= e($key) ?>" <?= ($profileData['objetivo'] ?? 'mantenimiento') === $key ? 'selected' : '' ?>><?= e($value) ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="sm:col-span-2">
+                    <label for="comensales" class="k-label">¿Para cuántas personas cocinas?</label>
+                    <select id="comensales" name="comensales" class="k-input sm:w-56">
+                        <?php for ($n = 1; $n <= 8; $n++): ?>
+                            <option value="<?= $n ?>" <?= (int) ($profileData['comensales'] ?? 1) === $n ? 'selected' : '' ?>><?= $n === 1 ? 'Solo para mí' : "$n personas" ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <p class="k-hint">La lista de la compra multiplica las cantidades. Tus calorías y macros siguen siendo los de tu ración.</p>
                 </div>
             </div>
         </section>

@@ -18,11 +18,11 @@ function exportarDatosCuenta(PDO $pdo, int $userId): array {
 
     $cuenta = $filas("SELECT u.correo, r.nombre AS rol, u.fecha_creacion FROM usuario u JOIN rol r ON r.id_rol = u.id_rol WHERE u.id_usuario = ?", [$userId]);
     $perfil = $filas("SELECT nombre, fecha_nacimiento, genero, altura_cm, peso_kg, nivel_actividad, objetivo, tdee_calorias,
-                             calorias_netas_objetivo, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g
+                             calorias_netas_objetivo, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g, comensales
                       FROM perfil WHERE id_usuario = ?", [$userId]);
 
     $recetas = $filas("SELECT id_receta, titulo, tipo_comida, descripcion, calorias_por_racion, proteinas_g_por_racion,
-                              carbohidratos_g_por_racion, grasas_g_por_racion, generado_ia, fecha_creacion
+                              carbohidratos_g_por_racion, grasas_g_por_racion, generado_ia, favorita, fecha_creacion
                        FROM receta WHERE id_usuario_creador = ? ORDER BY id_receta", [$userId]);
     $ingredientes = [];
     foreach ($filas("SELECT d.id_receta, d.nombre_ingrediente, d.cantidad, d.unidad FROM detalle_receta d

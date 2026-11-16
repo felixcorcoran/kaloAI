@@ -107,7 +107,7 @@ $momentoParaFiltrar = $momentoUrl ?: tipoRecetaParaMomento($_POST['tipo_comida_m
 // Todo lo que va entre horas se guarda como 'Snack'
 $tipoBuscado = tipoRecetaParaMomento($momentoParaFiltrar);
 
-$stmtRecetas = $pdo->prepare("SELECT * FROM receta WHERE id_usuario_creador = ? AND tipo_comida = ? ORDER BY titulo ASC");
+$stmtRecetas = $pdo->prepare("SELECT * FROM receta WHERE id_usuario_creador = ? AND tipo_comida = ? ORDER BY favorita DESC, titulo ASC");
 $stmtRecetas->execute([$userId, $tipoBuscado]);
 $misRecetas = $stmtRecetas->fetchAll();
 
@@ -343,7 +343,7 @@ if ($enPlan && $metaDiaria) {
                             <?php foreach ($misRecetas as $r): ?>
                                 <li class="flex items-center justify-between gap-4 px-5 py-3 sm:px-6">
                                     <div class="min-w-0">
-                                        <p class="truncate text-sm font-medium k-strong"><?= e($r['titulo']) ?></p>
+                                        <p class="flex items-center gap-1.5 truncate text-sm font-medium k-strong"><?php if (!empty($r['favorita'])): ?><span class="k-fav" aria-pressed="true" title="Favorita"><?= icono('heart', 'h-3.5 w-3.5') ?></span><?php endif; ?><?= e($r['titulo']) ?></p>
                                         <p class="text-xs tabular-nums k-muted"><?= (int) $r['calorias_por_racion'] ?> kcal · <?= e(round((float) $r['proteinas_g_por_racion'])) ?> g proteína</p>
                                     </div>
                                     <form method="POST" class="m-0 shrink-0">

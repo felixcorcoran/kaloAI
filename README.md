@@ -17,6 +17,7 @@ Plataforma de nutrición con recetas generadas por IA según las calorías, los 
 - **Lo que se come de verdad:** cada comida del plan se marca como «Hecho» y lo que se toma fuera del plan se apunta a mano (la IA puede estimar sus calorías). El panel «Hoy» y la gráfica de la semana comparan lo planificado con lo comido, y el nutricionista ve cuántos días apunta cada paciente.
 - **Plan por semanas:** cada semana tiene su plan; se puede volver a las pasadas (con lo que se comió cada día), preparar las siguientes y copiar la semana anterior en los huecos libres.
 - **Inventario y lista de la compra** de esta semana o de la que viene, agrupada por secciones del súper; la lista se descarga en PDF (Dompdf).
+- **Favoritas y comensales:** cada receta se puede marcar como favorita (filtro propio y primeras al elegir receta para el plan). En el perfil se elige para cuántas personas se cocina: la lista de la compra multiplica las cantidades y el detalle de una receta se puede ver para N personas.
 - **Recetas escritas a mano:** la IA puede calcular sus calorías y macros por ración a partir de los ingredientes.
 - **Recuperar la contraseña:** enlace por correo (Resend) que caduca en una hora y sirve una sola vez; en la base de datos solo se guarda su hash.
 - **Tu cuenta:** cada persona puede descargar todos sus datos en JSON o borrar su cuenta (con su contraseña).
@@ -108,7 +109,7 @@ Automático: al fusionar en `main`, GitHub Actions pasa los tests y, si van bien
 
 El despliegue escribe la clave de Resend en `core/secretos.php` (fuera del repositorio) y la sube con lo demás. Opcionales, en la pestaña *Variables*: `CORREO_REMITENTE` (por defecto `KaloAI <no-reply@felixcorcoran.es>`; tiene que ser de un dominio verificado en Resend), `FTP_SERVER` (por defecto `ftpupload.net`), `FTP_DIR` (por defecto `htdocs/`) y `FTP_PROTOCOL` (por defecto `ftps`; pon `ftp` solo si tu cuenta no admite conexiones cifradas). Sin los secretos, el despliegue se salta con un aviso. Para volver a desplegar sin cambios: pestaña *Actions* → *Tests* → *Run workflow* sobre `main`.
 
-**Para escribir una migración nueva:** crea `database/migraciones/006_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
+**Para escribir una migración nueva:** crea `database/migraciones/007_lo_que_hace.sql`, aplica el mismo cambio en `database/schema.sql` y añade el nombre del archivo a la lista del final de ese esquema (un test avisa si se olvida).
 
 ---
 

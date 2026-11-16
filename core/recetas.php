@@ -457,3 +457,36 @@ function agruparPorSeccion(array $lista): array {
     foreach ($lista as $item) $grupos[seccionProducto($item['nombre'])][] = $item;
     return array_filter($grupos);
 }
+
+/**
+ * FAVORITAS Y COMENSALES
+ */
+
+/** Marca o desmarca una receta propia como favorita. Devuelve el estado nuevo, o null si no es suya. */
+function alternarFavorita(PDO $pdo, int $userId, int $idReceta): ?bool {
+    $stmt = $pdo->prepare("UPDATE receta SET favorita = 1 - favorita WHERE id_receta = ? AND id_usuario_creador = ?");
+    $stmt->execute([$idReceta, $userId]);
+    if ($stmt->rowCount() === 0) return null;
+    $estado = $pdo->prepare("SELECT favorita FROM receta WHERE id_receta = ?");
+    $estado->execute([$idReceta]);
+    return (bool) $estado->fetchColumn();
+}
+
+/** Para cuántas personas cocina (perfil.comensales), entre 1 y 12. */
+function comensalesDe(PDO $pdo, int $userId): int {
+    $stmt = $pdo->prepare("SELECT comensales FROM perfil WHERE id_usuario = ?");
+    $stmt->execute([$userId]);
+    return max(1, min(12, (int) ($stmt->fetchColumn() ?: 1)));
+}
+
+/**
+ * Multiplica las raciones de las filas de la lista de la compra por el número
+ * de comensales (cada comida del plan se cocina para toda la casa). Función pura.
+ */
+function multiplicarRaciones(array $necesarios, int $comensales): array {
+    if ($comensales <= 1) return $necesarios;
+    return array_map(function ($fila) use ($comensales) {
+        $fila['raciones'] = (float) ($fila['raciones'] ?? 1) * $comensales;
+        return $fila;
+    }, $necesarios);
+}

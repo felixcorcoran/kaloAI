@@ -46,6 +46,9 @@ INSERT INTO receta (id_receta, id_usuario_creador, titulo, tipo_comida, descripc
    '1. Bate los huevos y cuájalos en la sartén.\n2. Acompaña con la ensalada aliñada.',
    410, 26.00, 12.00, 28.00, 0);
 
+-- El porridge es una de sus favoritas
+UPDATE receta SET favorita = 1 WHERE id_receta = 1;
+
 INSERT INTO detalle_receta (id_receta, nombre_ingrediente, cantidad, unidad) VALUES
   (1, 'Avena', 60, 'g'), (1, 'Plátano', 100, 'g'), (1, 'Bebida De Avena', 200, 'ml'),
   (2, 'Pechuga De Pollo', 150, 'g'), (2, 'Arroz Integral', 80, 'g'), (2, 'Calabacín', 120, 'g'),

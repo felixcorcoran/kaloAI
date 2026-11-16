@@ -54,6 +54,7 @@ $ingredientesEnCasa = count(array_filter($ingredientes, $tengoIngrediente));
 $stmtVeces = $pdo->prepare("SELECT COUNT(*) FROM comida_planificada cp JOIN plan_semanal ps ON cp.id_plan = ps.id_plan WHERE ps.id_usuario = ? AND ps.fecha_inicio_semana = ? AND cp.id_receta = ?");
 $stmtVeces->execute([$_SESSION['user_id'], lunesDe(), $recetaId]);
 $vecesEnPlan = (int) $stmtVeces->fetchColumn();
+$comensales = comensalesDe($pdo, (int) $_SESSION['user_id']);
 $stmtObj = $pdo->prepare("SELECT calorias_netas_objetivo, proteinas_objetivo_g, carbohidratos_objetivo_g, grasas_objetivo_g FROM perfil WHERE id_usuario = ?");
 $stmtObj->execute([$_SESSION['user_id']]);
 $objetivos = $stmtObj->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -90,6 +91,9 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
             </div>
         </div>
         <div class="flex gap-2">
+            <button type="button" onclick="alternarFavorita(this)" data-receta="<?= (int) $receta['id_receta'] ?>" data-titulo="<?= e($receta['titulo']) ?>"
+                    class="k-btn k-btn-secondary k-btn-icon k-fav" aria-pressed="<?= !empty($receta['favorita']) ? 'true' : 'false' ?>"
+                    aria-label="<?= !empty($receta['favorita']) ? 'Quitar de favoritas' : 'Añadir a favoritas' ?>: <?= e($receta['titulo']) ?>"><?= icono('heart') ?></button>
             <a href="editar_receta.php?id=<?= (int) $receta['id_receta'] ?>" class="k-btn k-btn-secondary"><?= icono('pencil') ?>Editar</a>
             <button type="button" onclick="abrirModalEliminar(<?= (int) $receta['id_receta'] ?>)" class="k-btn k-btn-ghost k-btn-danger-text"><?= icono('trash') ?>Eliminar</button>
         </div>
@@ -104,7 +108,13 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
         <div class="space-y-6 lg:col-span-2">
             <!-- INGREDIENTES -->
             <section class="k-card">
-                <div class="k-card-head"><h2 class="k-section-title">Ingredientes</h2><?php if ($ingredientes): ?><span class="k-badge <?= $ingredientesEnCasa === count($ingredientes) ? 'k-badge-ok' : '' ?>"><?= icono('package', 'h-3.5 w-3.5') ?><?= $ingredientesEnCasa ?> de <?= count($ingredientes) ?> en tu despensa</span><?php endif; ?></div>
+                <div class="k-card-head flex-wrap gap-3"><h2 class="k-section-title">Ingredientes</h2>
+                    <!-- Cantidades para varias personas (solo cambia lo que se ve) -->
+                    <div class="flex items-center gap-1 text-sm" aria-label="Número de personas">
+                        <button type="button" onclick="cambiarPersonasReceta(-1)" class="k-btn k-btn-ghost k-btn-icon h-8 w-8" aria-label="Una persona menos"><?= icono('minus', 'h-4 w-4') ?></button>
+                        <span class="min-w-[5.5rem] text-center k-strong" aria-live="polite"><span id="personasReceta"><?= (int) $comensales ?></span> <span id="personasTexto"><?= $comensales === 1 ? 'persona' : 'personas' ?></span></span>
+                        <button type="button" onclick="cambiarPersonasReceta(1)" class="k-btn k-btn-ghost k-btn-icon h-8 w-8" aria-label="Una persona más"><?= icono('plus', 'h-4 w-4') ?></button>
+                    </div><?php if ($ingredientes): ?><span class="k-badge <?= $ingredientesEnCasa === count($ingredientes) ? 'k-badge-ok' : '' ?>"><?= icono('package', 'h-3.5 w-3.5') ?><?= $ingredientesEnCasa ?> de <?= count($ingredientes) ?> en tu despensa</span><?php endif; ?></div>
                 <?php if ($ingredientes): ?>
                     <ul class="k-list">
                         <?php foreach ($ingredientes as $ing):
@@ -118,8 +128,8 @@ $metaKcal = (int) ($objetivos['calorias_netas_objetivo'] ?? 0);
                                     <?php endif; ?>
                                     <?= e($ing['nombre_ingrediente']) ?>
                                 </span>
-                                <span class="shrink-0 tabular-nums k-muted">
-                                    <?= $cantidad > 0 ? e(rtrim(rtrim(number_format($cantidad, 2, ',', '.'), '0'), ',')) . ' ' . e($ing['unidad']) : '' ?>
+                                <span class="shrink-0 tabular-nums k-muted" data-cantidad="<?= e($cantidad) ?>" data-unidad="<?= e($ing['unidad']) ?>">
+                                    <?= $cantidad > 0 ? e(rtrim(rtrim(number_format($cantidad * $comensales, 2, ',', '.'), '0'), ',')) . ' ' . e($ing['unidad']) : '' ?>
                                 </span>
                             </li>
                         <?php endforeach; ?>

@@ -50,6 +50,7 @@ CREATE TABLE perfil (
   peso_kg DECIMAL(6,2) DEFAULT NULL,
   nivel_actividad ENUM('sedentario','ligero','moderado','activo','muy_activo') DEFAULT NULL,
   objetivo ENUM('perdida_rapida','perdida_moderada','perdida_grasa','mantenimiento','ganancia_muscular','recomposicion_corporal','rendimiento_deportivo') NOT NULL DEFAULT 'mantenimiento',
+  comensales TINYINT UNSIGNED NOT NULL DEFAULT 1,
   tdee_calorias INT DEFAULT NULL,
   proteinas_objetivo_g INT DEFAULT NULL,
   carbohidratos_objetivo_g INT DEFAULT NULL,
@@ -103,6 +104,7 @@ CREATE TABLE receta (
   carbohidratos_g_por_racion DECIMAL(7,2) DEFAULT NULL,
   grasas_g_por_racion DECIMAL(7,2) DEFAULT NULL,
   generado_ia TINYINT(1) DEFAULT 1,
+  favorita TINYINT(1) NOT NULL DEFAULT 0,
   fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id_receta),
   KEY fk_receta_creador (id_usuario_creador),
@@ -215,4 +217,5 @@ INSERT INTO migraciones (nombre) VALUES
   ('002_texto_sin_escapar.sql'),
   ('003_registro_comida.sql'),
   ('004_un_plan_por_semana.sql'),
-  ('005_restablecer_contrasena.sql');
+  ('005_restablecer_contrasena.sql'),
+  ('006_favoritas_y_comensales.sql');

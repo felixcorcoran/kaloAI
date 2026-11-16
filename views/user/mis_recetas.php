@@ -106,7 +106,7 @@ include_once __DIR__ . '/../templates/header.php';
                 <input type="search" id="recipeSearch" class="k-input" placeholder="Buscar por nombre…">
             </label>
             <div class="k-seg" role="group" aria-label="Filtrar por tipo de comida">
-                <?php foreach (['todos' => 'Todas', 'desayuno' => 'Desayuno', 'almuerzo' => 'Almuerzo', 'snack' => 'Snack', 'cena' => 'Cena'] as $filtro => $texto): ?>
+                <?php foreach (['todos' => 'Todas', 'favoritas' => '♥ Favoritas', 'desayuno' => 'Desayuno', 'almuerzo' => 'Almuerzo', 'snack' => 'Snack', 'cena' => 'Cena'] as $filtro => $texto): ?>
                     <button type="button" data-filtro="<?= $filtro ?>" aria-pressed="<?= $filtro === 'todos' ? 'true' : 'false' ?>" onclick="filtrarPor('<?= $filtro ?>')"><?= $texto ?></button>
                 <?php endforeach; ?>
             </div>
@@ -116,9 +116,9 @@ include_once __DIR__ . '/../templates/header.php';
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <?php foreach ($recetas as $receta):
                 $estilo = estiloTipoReceta($receta['tipo_comida']); ?>
+                <div class="recipe-card relative" data-tipo="<?= e($estilo['filtro']) ?>" data-titulo="<?= e(mb_strtolower($receta['titulo'], 'UTF-8')) ?>" data-favorita="<?= !empty($receta['favorita']) ? '1' : '0' ?>">
                 <a href="detalle_receta.php?id=<?= (int) $receta['id_receta'] ?>"
-                   class="recipe-card k-card k-card-link group flex flex-col overflow-hidden"
-                   data-tipo="<?= e($estilo['filtro']) ?>" data-titulo="<?= e(mb_strtolower($receta['titulo'], 'UTF-8')) ?>">
+                   class="k-card k-card-link group flex h-full flex-col overflow-hidden">
                     <div class="<?= $estilo['tinte'] ?> relative grid h-28 place-items-center text-5xl" aria-hidden="true">
                         <span class="transition-transform duration-300 group-hover:scale-110"><?= $estilo['emoji'] ?></span>
                         <?php if (!empty($receta['generado_ia'])): ?>
@@ -139,6 +139,10 @@ include_once __DIR__ . '/../templates/header.php';
                         </div>
                     </div>
                 </a>
+                <button type="button" onclick="alternarFavorita(this)" data-receta="<?= (int) $receta['id_receta'] ?>" data-titulo="<?= e($receta['titulo']) ?>"
+                        class="k-btn k-btn-ghost k-btn-icon k-fav absolute bottom-3 right-3" aria-pressed="<?= !empty($receta['favorita']) ? 'true' : 'false' ?>"
+                        aria-label="<?= !empty($receta['favorita']) ? 'Quitar de favoritas' : 'Añadir a favoritas' ?>: <?= e($receta['titulo']) ?>"><?= icono('heart') ?></button>
+                </div>
             <?php endforeach; ?>
         </div>
 

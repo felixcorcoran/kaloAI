@@ -198,7 +198,7 @@ $stmtNec->execute([$userId, lunesDe()]);
 $stmtInv = $pdo->prepare("SELECT nombre_ingrediente, cantidad, unidad FROM inventario WHERE id_usuario = ?");
 $stmtInv->execute([$userId]);
 $inventario = $stmtInv->fetchAll();
-$pendientesCompra = calcularListaCompra($stmtNec->fetchAll(), $inventario);
+$pendientesCompra = calcularListaCompra(multiplicarRaciones($stmtNec->fetchAll(), comensalesDe($pdo, (int) $userId)), $inventario);
 
 $stmtRec = $pdo->prepare("SELECT COUNT(*) AS total, COALESCE(SUM(generado_ia), 0) AS ia FROM receta WHERE id_usuario_creador = ?");
 $stmtRec->execute([$userId]);

@@ -39,7 +39,9 @@ $stmtNec = $pdo->prepare($sqlNecesario);
 // Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
 $semana = semanaValida($_GET['semana'] ?? null);
 $stmtNec->execute([$userId, $semana]);
-$necesariosRaw = $stmtNec->fetchAll();
+// Cada comida se cocina para toda la casa (perfil: «¿Para cuántas personas cocinas?»)
+$comensales = comensalesDe($pdo, (int) $userId);
+$necesariosRaw = multiplicarRaciones($stmtNec->fetchAll(), $comensales);
 
 // Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
 // sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.

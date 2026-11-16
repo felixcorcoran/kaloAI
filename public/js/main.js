@@ -206,13 +206,48 @@ function aplicarFiltrosRecetas() {
     const termino = (document.getElementById('recipeSearch')?.value || '').toLowerCase().trim();
     let visibles = 0;
     tarjetas.forEach(tarjeta => {
-        const coincide = (window.filtroRecetaActual === 'todos' || tarjeta.dataset.tipo === window.filtroRecetaActual)
+        const filtro = window.filtroRecetaActual || 'todos';
+        const coincide = (filtro === 'todos' || (filtro === 'favoritas' ? tarjeta.dataset.favorita === '1' : tarjeta.dataset.tipo === filtro))
             && tarjeta.dataset.titulo.includes(termino);
         tarjeta.hidden = !coincide;
         if (coincide) visibles++;
     });
     const sinResultados = document.getElementById('noResults');
     if (sinResultados) sinResultados.hidden = visibles > 0;
+}
+
+/** Marca o desmarca una receta como favorita sin recargar la página. */
+async function alternarFavorita(boton) {
+    boton.disabled = true;
+    try {
+        const datos = new FormData();
+        datos.append('id_receta', boton.dataset.receta);
+        const respuesta = await fetch(boton.dataset.url || 'favorita.php', {
+            method: 'POST', body: datos, headers: { 'X-CSRF-Token': tokenCsrf(), 'Accept': 'application/json' },
+        });
+        const json = await respuesta.json();
+        if (!json.success) return;
+        boton.setAttribute('aria-pressed', json.favorita ? 'true' : 'false');
+        boton.setAttribute('aria-label', (json.favorita ? 'Quitar de favoritas: ' : 'Añadir a favoritas: ') + boton.dataset.titulo);
+        const tarjeta = boton.closest('.recipe-card');
+        if (tarjeta) { tarjeta.dataset.favorita = json.favorita ? '1' : '0'; aplicarFiltrosRecetas(); }
+    } finally {
+        boton.disabled = false;
+    }
+}
+
+/** Detalle de receta: cantidades de los ingredientes para N personas. */
+function cambiarPersonasReceta(cambio) {
+    const salida = document.getElementById('personasReceta');
+    if (!salida) return;
+    const personas = Math.max(1, Math.min(12, (parseInt(salida.textContent, 10) || 1) + cambio));
+    salida.textContent = personas;
+    document.getElementById('personasTexto').textContent = personas === 1 ? 'persona' : 'personas';
+    document.querySelectorAll('[data-cantidad]').forEach(celda => {
+        const total = parseFloat(celda.dataset.cantidad) * personas;
+        const unidad = celda.dataset.unidad || '';
+        celda.textContent = total > 0 ? `${(Math.round(total * 100) / 100).toLocaleString('es-ES')} ${unidad}`.trim() : '';
+    });
 }
 
 function abrirModalEliminar(id) {

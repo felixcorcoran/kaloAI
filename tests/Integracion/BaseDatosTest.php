@@ -385,4 +385,20 @@ final class BaseDatosTest extends TestCase
         $this->assertFalse($this->pedirEnlace('laura@kaloai.test', $correos));
         $this->assertCount(3, $correos);
     }
+
+    public function testFavoritasSoloDeLasRecetasPropias(): void
+    {
+        $this->assertFalse(alternarFavorita(self::$pdo, self::LAURA, 1), 'El porridge era favorita: se desmarca');
+        $this->assertTrue(alternarFavorita(self::$pdo, self::LAURA, 1));
+        $this->assertNull(alternarFavorita(self::$pdo, self::MARCOS, 2), 'No puede tocar recetas ajenas');
+        $this->assertSame(0, (int) $this->valor("SELECT favorita FROM receta WHERE id_receta = 2"));
+    }
+
+    public function testComensalesDelPerfil(): void
+    {
+        $this->assertSame(1, comensalesDe(self::$pdo, self::LAURA));
+        self::$pdo->exec("UPDATE perfil SET comensales = 4 WHERE id_usuario = 3");
+        $this->assertSame(4, comensalesDe(self::$pdo, self::LAURA));
+        $this->assertSame(1, comensalesDe(self::$pdo, 999), 'Sin perfil, una persona');
+    }
 }

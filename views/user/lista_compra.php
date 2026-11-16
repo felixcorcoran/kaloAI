@@ -39,7 +39,9 @@ $stmtNec = $pdo->prepare($sqlNecesario);
 // Semana de la lista: la actual o la que se pida (?semana=AAAA-MM-DD)
 $semana = semanaValida($_GET['semana'] ?? null);
 $stmtNec->execute([$userId, $semana]);
-$necesariosRaw = $stmtNec->fetchAll();
+// Cada comida se cocina para toda la casa (perfil: «¿Para cuántas personas cocinas?»)
+$comensales = comensalesDe($pdo, (int) $userId);
+$necesariosRaw = multiplicarRaciones($stmtNec->fetchAll(), $comensales);
 
 // Lo que falta = lo que piden las recetas del plan - lo que hay en el inventario,
 // sumado en la misma unidad (kg/g, L/ml). La lógica está en core/recetas.php.
@@ -74,7 +76,7 @@ $formatear = function (float $cantidad, string $unidad): string {
         <div>
             <span class="k-pill"><?= icono('cart') ?><?= e(nombreSemana($semana)) ?></span>
             <h1 class="k-title mt-3">Lista de la compra</h1>
-            <p class="k-subtitle">Lo que necesitan las recetas de tu plan, menos lo que ya tienes en la despensa.</p>
+            <p class="k-subtitle">Lo que necesitan las recetas de tu plan<?= $comensales > 1 ? ' para ' . $comensales . ' personas' : '' ?>, menos lo que ya tienes en la despensa. <a href="perfil.php" class="k-link"><?= $comensales > 1 ? 'Cambiar' : '¿Cocinas para más gente?' ?></a></p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
             <!-- Esta semana o la siguiente (para hacer la compra con antelación) -->

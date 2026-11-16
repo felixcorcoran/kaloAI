@@ -172,6 +172,11 @@
     .k-btn-icon svg { @apply h-[18px] w-[18px]; }
     .k-btn-icon.k-btn-danger-text:hover { background-color: var(--k-danger-soft); color: var(--k-danger); }
     .k-btn-danger-text:not(.k-btn-icon) { color: var(--k-danger); }
+    /* Corazón de favorita: hueco o relleno según aria-pressed */
+    .k-fav { color: var(--k-muted); }
+    .k-fav:hover { color: var(--k-fat); }
+    .k-fav[aria-pressed="true"] { color: var(--k-fat); }
+    .k-fav[aria-pressed="true"] svg { fill: currentColor; }
     .k-btn-danger-text:not(.k-btn-icon):hover { background-color: var(--k-danger-soft); }
 
     /* ---------- Formularios ---------- */
